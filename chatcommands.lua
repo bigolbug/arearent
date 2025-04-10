@@ -23,10 +23,16 @@ core.register_chatcommand("rent", {
 				fade = 1,
 			}
 			core.sound_play(sound)
+			
+			local storage_table = area_rent.metadata:to_table()
+			for key, value in pairs(storage_table["fields"]) do
+				core.chat_send_all(key)
+			end
 
-			return false, "message"
+			return false, message
 		end
 
+		-- Check to see if an area needs to be selected. 
 		if not (pos1 and pos2) then
 			return false, "You need to select an area first. Use /area_pos1 \nand /area_pos2 to set the bounding corners"
 		end
@@ -54,12 +60,43 @@ core.register_chatcommand("rent", {
 		-- find distance from area center to the universal center
 		local area_center = area_rent.center_pos(pos1,pos2)
 		local distance_to_center = vector.distance(area_rent.origin, area_center)
+		local rate = area_rent.price.rate(distance_to_center)
+		local cost = math.ceil(rate * area_vol)
+		core.chat_send_player(name,"This area will cost: ".. cost .. " xp per day\n\tArea priced at "..rate.." xp per node per day")
+		
+		--Based on your current XP...
+		if area_rent:qualify(XP,cost) then
+			-- You qualify
+		else
+			return false, "You have ".. XP.." XP. which is insufficient XP to rent this area\n"..
+				"You must be able to cover the cost of all your properties for up to a month before qualifying for a new property"
+		end
+		local rental_life = math.floor(XP/cost)
+		
+		
 
-		core.chat_send_player(name,"Distance From center: "..distance_to_center)
+		--Save the area in mod storage and inform the user on how to recall it. 
+		local message = "You are able to store up to 5 areas for recall"
+		local area_name = area_rent.Que_Area(pos1,pos2,name,cost)
+		message = message .. "\n" .. "\tThe Area you have qued is called " .. area_name
+		message = message .. "\n" .. "\tThe following is the command for renting this area"
+		local player_areas = area_rent.area_count(name)
 
-		--Apply a rate 
-
-
+		
+		--[[
+		if not area_rent.metadata:contains(name) then
+			--The player has no areas stored
+			local area_name = name .. "_" .. os.time()
+			player_Meta[name] = { fields = {}}
+			player_Meta[name]["fields"][area_name] = area_rent.serialize(pos1, pos2, name, cost)
+			if mod_storage:from_table(player_Meta[name]) then
+				core.chat_send_all("Success")
+			end
+			core.chat_send_all("No entry")
+		else
+			core.chat_send_all("Found Entry")
+		end
+		]]--
 	
 		--local radius = {x = area_rent.origin.x - area_center.x, y = area_rent.origin.y - area_center.y, z = area_rent.origin.z - area_center.z}
 		
@@ -72,9 +109,6 @@ core.register_chatcommand("rent", {
 			local area = areas.areas[area_id]
 			return false, "Your selection itersects with another players area"
 		end
-
-
-		
 	end,
 })
 --[[
