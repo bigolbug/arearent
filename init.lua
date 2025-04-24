@@ -9,3 +9,4 @@ dofile(area_rent.modpath.."/chatcommands.lua")
 --dofile(area_rent.modpath.."/pos.lua")
 --dofile(area_rent.modpath.."/hud.lua")
 
+core.after(area_rent.scan_interval,area_rent.loop)
