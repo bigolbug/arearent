@@ -40,14 +40,13 @@ core.register_chatcommand("rent", {
 			end
 			local cued_Areas = area_rent.areas_by_player(name,"CUED")
 			local Rented_Areas = area_rent.areas_by_player(name,"RENTED")
-			local cued_table_Len = area_rent.tableLen(cued_Areas)
-			local Rented_table_Len = area_rent.tableLen(Rented_Areas)
+	
 			--core.chat_send_all(Rented_table_Len)
-			if Rented_table_Len > 0 then
+			if area_rent.tableLen(Rented_Areas) then
 				message = message .. "\n\tYour rented areas are..."
 				local Total_cost = 0
-				for Area_Name, Area_description in pairs(Rented_Areas) do
-					local area_data = core.deserialize(Area_description)
+				for Area_Name, Area_desc in pairs(Rented_Areas) do
+					local area_data = core.deserialize(Area_desc)
 					Total_cost = Total_cost + area_data.cost
 					message = message .. "\n\t" .. Area_Name
 				end
@@ -57,7 +56,7 @@ core.register_chatcommand("rent", {
 				message = message .. "\n\tYou have no properties rented"
 			end
 
-			if cued_table_Len > 0 then
+			if area_rent.tableLen(cued_Areas) then
 				message = message .. "\n\tYour cued areas are..."
 				for Area_Name, Area_description in pairs(cued_Areas) do
 					message = message .. "\n\t" .. Area_Name
@@ -91,7 +90,16 @@ core.register_chatcommand("rent", {
 
 			area_rent.rent_area(area_data,name)
 			return false, "Rental complete"
+		elseif action == "REMOVE" then
+			if not tonumber(area_ID) then
+				return false, "you must provide "
+			end
 		elseif action == nil then
+			-- Check to see if mod is enabled
+			local ar_center = core.deserialize(area_rent.metadata:get_string("center"))
+			if not ar_center then
+				return false, "Area rent mod is not setup, please set a center with /rdata center"
+			end
 
 			-- Check to see if an area needs to be selected. 
 			if not (area_data.pos1 and area_data.pos2) then
@@ -114,15 +122,15 @@ core.register_chatcommand("rent", {
 			end
 
 			--Calculate Volume
-			local area_vol = area_height * area_dx * area_dz
-			if area_vol > area_rent.limit.volume then return false, "Please reduce the size of your selection" end
+			area_data.volume = area_height * area_dx * area_dz
+			if area_data.volume > area_rent.limit.volume then return false, "Please reduce the size of your selection" end
 
 			-- CALCULATE RENTAL PRICE
 			-- find distance from area center to the universal center
 			local area_center = area_rent.center_pos(area_data.pos1,area_data.pos2)
-			local distance_to_center = vector.distance(area_rent.origin, area_center)
+			local distance_to_center = vector.distance(ar_center, area_center)
 			local rate = area_rent.price.rate(distance_to_center)
-			area_data.cost = math.ceil(rate * area_vol)
+			area_data.cost = math.ceil(rate * area_data.volume)
 			core.chat_send_player(name,"This area will cost: ".. area_data.cost .. " xp per day\n\tArea priced at "..rate.." xp per node per day")
 			
 			--Based on your current XP...
@@ -197,26 +205,11 @@ core.register_chatcommand("booyah", {
 	end,
 })
 ]]--
-core.register_chatcommand("rent_area_center",{
-	params = "",
-	privs = "server",
-	description = "Set the center of the rental area",
-	func = function(name, param)
-		local player = core.get_player_by_name(name)
-		local center = core.serialize(player:get_pos())
-		area_rent.metadata:set_string("center",center)
-		area_rent.metadata:set_int("setup",1)
-		
-		core.chat_send_player(name,"Set the area rent center to")
-		
-	end,
 
-})
-
-core.register_chatcommand("rdata",{
+core.register_chatcommand("rcmd",{
 	params = "[action]",
 	privs = "server",
-	description = "Check the data of the Area Rental Mod",
+	description = "Check the data of the Area Rental Mod: Options: clear, center and none for all data",
 	func = function(name, param)
 		local action = string.upper(param)
 		if action == "CLEAR" then
@@ -230,25 +223,25 @@ core.register_chatcommand("rdata",{
 				
 			end
 			area_rent.metadata:from_table(meta_data)
+		elseif action == "CENTER" then
+			local player = core.get_player_by_name(name)
+			local center = core.serialize(player:get_pos())
+			area_rent.metadata:set_string("center",center)
+			area_rent.metadata:set_int("setup",1)
+			area_rent.debug("Set the area rent center to "..center)
+		elseif action == "CHARGE" then
+			if not area_rent.charge() then
+				return false, "You can only charge once per day."
+			end
+			return false, "You have successfully charged rent"
 		else
 			local meta_data = area_rent.metadata:to_table()
 			for area_name, area_desc in pairs(meta_data["fields"]) do
 				core.chat_send_all(area_name.."           ".. area_desc)
 			end
+			core.chat_send_player(name,"Running default RCMD")
 		end
 		
 	end,
 
-})
-
-core.register_chatcommand("rental_charge",{
-	params = "",
-	privs = "server",
-	description = "Check the data of the Area Rental Mod",
-	func = function(name, param)
-		if not area_rent.charge() then
-			return false, "You can only charge once per day."
-		end
-		return false, "You have successfully charge rent"
-	end,
 })

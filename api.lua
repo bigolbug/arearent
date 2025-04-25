@@ -80,11 +80,58 @@ function area_rent.rent_area(area_data, renter)
     table.insert(renter_list,renter)
     area_rent.metadata:set_string("renters",core.serialize(renter_list))
     --Add Record
+    area_data.ID = area_rent.create_area(area_name,area_data)
     area_rent.metadata:set_string(area_name, core.serialize(area_data))
+    
     return area_name
 end
 
+function area_rent.add_zeros(number)
+    local len = string.len(number)
+    local text = ""
+    for i = 1, 8 - len, 1 do
+        text = text .. "0"
+    end
+    return text .. number
+end
+
+function area_rent.sort(TBL,catagory)
+    --[[
+    This functin lacks intelegance for the sack of simplicity. It should 
+    determine whether a catagory is a number of string before sorting
+    ]]--
+    local sort_areas = {}
+    
+    -- To see available catagories check... 
+    if catagory then 
+        --sort based on catagory
+        for area_name, area_desc in pairs(TBL) do
+            area_desc = core.deserialize(area_desc)
+            if not area_desc[catagory] then
+                core.log("error","The Area Rent mod failed in the sort function, catagory not found")
+                return false
+            end
+            local prefix = area_rent.add_zeros(area_desc[catagory])
+            area_name = prefix ..".".. area_name
+            table.insert(sort_areas, area_name)
+        end
+        table.sort(sort_areas)
+        --Strip the catagory
+        for i, area_name in ipairs(sort_areas) do
+            areas[i] = string.gsub (area_name,"^%d+%.","")
+        end
+    else
+        --Sort table, newest to oldest
+        for area_name, area_des in pairs(TBL) do table.insert(sort_areas, area_name) end
+        table.sort(areas)
+    end    
+
+
+    return areas
+end
+
 function area_rent.areas_by_player(player, Status)
+    
     local storage_table = area_rent.metadata:to_table()
     Status = string.upper(Status)
     local TBL = {}
@@ -99,21 +146,16 @@ function area_rent.areas_by_player(player, Status)
         end
     end
 
-    --Sort table, newest to oldest
-    local areas = {}
-    for area_name in pairs(TBL) do table.insert(areas, area_name) end
-    table.sort(areas)
-    -- If there are 5 or more then update Meta data
-    while #areas > area_rent.cueable_Area_Limit and Status == "CUED" do
-        storage_table["fields"][areas[1]] = nil
-        --core.chat_send_all("Deleting ".. areas[1])
-        TBL[areas[1]] = nil
-        table.remove(areas,1)
-        --core.chat_send_all("The table now has entries: " .. #areas)
+    if Status == "CUED" then
+        local cued_areas = area_rent.sort(TBL)
+        -- If there are 5 or more then update Meta data
+        while #cued_areas > area_rent.cueable_Area_Limit do
+            area_rent.metadata:set_string(cued_areas[1],nil)
+            TBL[areas[1]] = nil
+            table.remove(cued_areas,1)
+        end    
     end
     
-    area_rent.metadata:from_table(storage_table)
-
     return TBL
 end
 
@@ -122,23 +164,35 @@ function area_rent.qualify(name,XP,cost,term)
     term = term or area_rent.qualifying_term
     -- get all the properties of a player
     local Total_Properties_Cost = cost
-    for area_name, area_description in pairs(area_rent.areas_by_player(name,"RENTED")) do
-        local area_data = core.deserialize(area_description)
-        Total_Properties_Cost = Total_Properties_Cost + area_data.cost
+    local player_properties = area_rent.areas_by_player(name,"RENTED")
+    
+    --Count up the cost for all rentals
+    if area_rent.tableLen(player_properties) then
+        for area_name,area_data in pairs(player_properties) do
+            area_data = core.deserialize(area_data)
+            Total_Properties_Cost = Total_Properties_Cost + area_data.cost
+        end
     end
 
+    -- If the daily property cost is less then the players XP return true
     if Total_Properties_Cost * term < XP then
         return true
     end
+
     return false
 end
 
 function area_rent.tableLen(TBL)
     local count = 0
-    for key, value in pairs(TBL) do
-        count = count + 1
+
+    if not TBL then
+        core.chat_send_all("something is wrong 6534")
+        return false
     end
-    return count
+    
+
+    for key, value in pairs(TBL) do count = count + 1 end
+    if count == 0 then return false else return count end
 end
 
 function area_rent.checkMetaDataValues (meta) 
@@ -160,19 +214,13 @@ end
 
 function area_rent.loop()
     --Check to see when we charged last
-    local rental_data = area_rent.metadata:to_table()
-    local current_time = os.time()
-    if not rental_data["fields"]["last_charge_date"] then
+    if not area_rent.metadata:get_int("last_charge_date") then
         core.after(area_rent.scan_interval,area_rent.loop)
-        core.chat_send_all("No previous rental")
+        area_rent.debug("Area rent has no rentals to charge")
         return false
     end
-    local lapsed_time = current_time - rental_data["fields"]["last_charge_date"]
-
-    local time_of_Day = core.get_timeofday()
     
-    
-    area_rent.metadata:from_table(rental_data)
+    area_rent.charge()
     core.after(area_rent.scan_interval,area_rent.loop)
 end
 
@@ -183,29 +231,42 @@ function area_rent.charge()
         return false
     end
 
-    local area_data = area_rent.metadata:to_table()
-    local renters = core.deserialize(area_data.fields.renters)
+    local renters = core.deserialize(area_rent.metadata:get_string("renters"))
+
+    if not renters then
+        core.log("error","Renters does not exist in meta data. Renters variable type: "..type(renters))
+        return false
+    end
     -- parse through renteres list and charge each
     for _, renter in ipairs(renters) do
         local player_areas = area_rent.areas_by_player(renter,"rented")
         local XP = xp_redo.get_xp(renter)
-        while not area_rent.qualify(renter,XP,0,2) do
+
+        --Check to make sure renter can make payment
+        while (not area_rent.qualify(renter,XP,0,2)) and (area_rent.tableLen(player_areas)) do
+            local removed,message = area_rent.remove_area(renter)
+            if not removed then
+                area_rent.debug("The removal function failed with this message: "..message)
+                break
+            end
+            area_rent.remove_area(renter) -- Remove the smallest property and try again
             
         end
 
+        -- Charge the player if they have properties
         if area_rent.tableLen(player_areas) then
             -- the player has active areas. 
-            for area_ID, area_desciption in pairs(player_areas) do
-                area_desciption = core.deserialize(area_desciption)
-                xp_redo.add_xp(renter, -area_desciption.cost)
-                if area_desciption.owner ~= "SERVER" then
-                    xp_redo.add_xp(area_desciption.owner,area_desciption.cost)
+            for area_name,area_desc in pairs(player_areas) do
+                area_desc = core.deserialize(area_desc)
+                xp_redo.add_xp(renter, -area_desc.cost)
+                if area_desc.owner ~= "SERVER" then
+                    xp_redo.add_xp(area_desc.owner,area_desc.cost)
                 end
             end
         end
     end
-    area_rent.metadata:from_table(area_data)
-    area_rent.metadata:set_string("last_charge_date",os.time())
+
+    area_rent.metadata:set_int("last_charge_date",os.time())
     area_rent.metadata:set_int("last_charge_day",core.get_day_count())
     return true
 end
@@ -213,10 +274,10 @@ end
 function area_rent.check_balance(name)
     local cued_Areas = area_rent.areas_by_player(name,"CUED")
     local Rented_Areas = area_rent.areas_by_player(name,"RENTED")
-    local cued_table_Len = area_rent.tableLen(cued_Areas)
-    local Rented_table_Len = area_rent.tableLen(Rented_Areas)
+    local message = ""
+
     --core.chat_send_all(Rented_table_Len)
-    if Rented_table_Len > 0 then
+    if area_rent.tableLen(Rented_Areas) then
         message = message .. "\n\tYour rented areas are..."
         local Total_cost = 0
         for Area_Name, Area_description in pairs(Rented_Areas) do
@@ -230,7 +291,7 @@ function area_rent.check_balance(name)
         message = message .. "\n\tYou have no properties rented"
     end
 
-    if cued_table_Len > 0 then
+    if area_rent.tableLen(cued_Areas) then
         message = message .. "\n\tYour cued areas are..."
         for Area_Name, Area_description in pairs(cued_Areas) do
             message = message .. "\n\t" .. Area_Name
@@ -240,4 +301,52 @@ function area_rent.check_balance(name)
     end
 
     return false
+end
+
+function area_rent.remove_area(renter,area_name)
+    local ID
+
+    if not area_name then
+        -- By default, find the smallest
+        local player_areas = area_rent.areas_by_player(renter,"rented")
+        player_areas = area_rent.sort(player_areas,"volume")
+        if not player_areas then
+            -- this player has no areas to remove. 
+            return false, "no properties"
+        end
+        area_name = player_areas[1]
+        
+    end
+
+    local area_data = core.deserialize(area_rent.metadata:get_string(area_name))
+    
+    ID = 3
+    --ID = area_data.ID
+    if not ID then
+        -- ID Does not exist. 
+        return false, "area_name"
+    end
+
+    ID = tonumber(ID)
+
+    if not areas:isAreaOwner(ID, renter) then
+        area_rent.debug("The Areas Mod does not agree that "..renter.." is the owner of area ID: "..ID)
+        return false, "owner"
+    end
+
+    area_rent.metadata:set_string(area_name,nil)
+    areas:remove(ID)
+    areas:save()
+    return true
+end
+
+function area_rent.create_area(area_name, area_data)
+    core.chat_send_all("You need to finish the create area function")
+    local ID = areas:add(area_data.loaner, area_name, area_data.pos1, area_data.pos2, nil)
+	areas:save()
+    return ID
+end
+
+function area_rent.debug(text)
+    core.log(area_rent.debuglevel,text)
 end

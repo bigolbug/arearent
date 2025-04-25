@@ -4,7 +4,7 @@ figure out how to get settings from the minetest config section.
 
 
 ]]--
-
+area_rent.debuglevel = "error" -- options "info" "none", "error", "warning", "action", or "verbose"
 area_rent.startTime = os.clock()
 area_rent.metadata = core.get_mod_storage()
 area_rent.xp_hit = 4 -- This number represents the damage on a punch. Higher levels of damage indicate a powerful player. 
@@ -21,17 +21,15 @@ area_rent.start_day = core.get_day_count()
 --if center is not set log that center should be set and disable rental
 if not area_rent.metadata:contains("center") then
     --Log entry...
-    area_rent.metadata:set_int("setup",0) -- TODO add entry for all commands that tells us to set center
-else
-    -- This should be removed. Meta data should be accessed while running and not just at initialization
-    local meta_center_pos = area_rent.metadata:get_string("center")
-    area_rent.origin = core.deserialize(meta_center_pos)
+    area_rent.debug("Area rent center not set")
+    area_rent.metadata:set_int("setup",0) -- TODO add entry for all commands that tells us to set center    
 end
 
 --Initialize Renter List
 if not area_rent.metadata:contains("renters") then
     --Add Log entry??
     local renters = {}
+    core.log("error","Renters Table not set, creating entry")
     area_rent.metadata:set_string("renters",core.serialize(renters)) -- TODO add entry for all commands that tells us to set center
 end
 
