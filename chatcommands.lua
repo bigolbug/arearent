@@ -5,7 +5,8 @@ core.register_chatcommand("rent", {
 	"Example: \n"..
 	"type /rent          to find out details about your rental area\n"..
 	"type /rent area     to rent an area\n"..
-	"type /rent status   for an update on your properties\n"
+	"type /rent status   for an update on your properties\n"..
+	"type /rent pos   	 to set the second area marker\n"
 	,
 	func = function(name, param)
 		-- define a local variables
@@ -66,6 +67,22 @@ core.register_chatcommand("rent", {
 			end
 
 			return false, message
+		elseif action == "POS"  then	
+			-- Check to see if an area needs to be selected. 
+			local player = core.get_player_by_name(name)
+			local pos = vector.round(player:get_pos())
+			pos.y = pos.y-1
+			areas:setPos1(name, pos)
+
+			local limit = {}
+			limit.x = area_rent.limit.w_max
+			limit.z = area_rent.limit.w_max
+			limit.y = math.floor(area_rent.limit.volume/(limit.x*limit.z))
+			
+			local pos = vector.add(pos,limit)
+
+			areas:setPos2(name, pos)
+			return true, "The second location has been set"
 		elseif action == "AREA"  then
 			--validate cue
 			local meta_table = area_rent.metadata:to_table()
@@ -90,10 +107,67 @@ core.register_chatcommand("rent", {
 
 			area_rent.rent_area(area_data,name)
 			return false, "Rental complete"
+		elseif action == "VIEW" then
+			local player = core.get_player_by_name(name)
+			local pos = vector.round(player:get_pos())
+			if not area_ID then
+				local player_areas = area_rent.areas_by_player(name)
+				local message = "What area would you like to view?\n"
+				for area_name, area_desc in pairs(player_areas) do
+					message = message .. "\t\t"..area_name.."\n"
+				end
+				return false, message
+			end
+
+			local area_desc = area_rent.metadata:get_string(area_ID)
+			if not area_desc then
+				return false, area_ID .. " is not a known area. \n\t\t Use --> /rent status <-- to see your areas"
+			end
+			
+			if true then
+				core.chat_send_all(type(area_desc))
+				if type(area_desc) == "table" then
+					for key, value in pairs(area_desc) do
+						core.chat_send_all(key)
+					end
+				end
+				return false," investigation complete"
+			end
+			area_desc = core.deserialize(area_desc)
+			
+			if area_desc.owner ~= name then
+				return false, "You can not view this area since you are not the owner"
+			end
+			local entity = core.add_entity(pos, "area_rent:boarder")
+			--[[
+			if entity then
+				local luaentity = entity:get_luaentity()
+				if luaentity then
+					luaentity.player = name
+				end
+			end
+			]]
 		elseif action == "REMOVE" then
 			if not tonumber(area_ID) then
-				return false, "you must provide "
+				return false, "you must specify the area by ID number"
+			end 
+			local ID = tonumber(area_ID)
+			--Is the sender the owner?
+			if not areas:isAreaOwner(ID, name) then
+				return false, "You must be the owner of the area to remove it"
 			end
+
+			local area_name = area_rent.get_area_by_ID(ID,name)
+			if not area_name then
+				-- This owner does not have an area by that ID
+				return false, "You do not have an area with that ID number"
+			end
+
+			area_rent.metadata:set_string(area_name,nil)
+			areas:remove(ID)
+			areas:save()
+			return true, "Area ".. area_name.." with ID ".. ID .. " has been removed. Check /rent Status to cofirm"
+
 		elseif action == nil then
 			-- Check to see if mod is enabled
 			local ar_center = core.deserialize(area_rent.metadata:get_string("center"))
@@ -108,6 +182,7 @@ core.register_chatcommand("rent", {
 			
 			--Check for intersecting areas and determine action. 
 			local intersecting_areas = areas:getAreasIntersectingArea(area_data.pos1, area_data.pos2)
+			--This is were you would find out if the player owns the area. 
 			if #intersecting_areas > 0 then
 				return false, "At this time you can not rent this area since it intersects with another"
 			end

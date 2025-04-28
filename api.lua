@@ -77,7 +77,10 @@ function area_rent.rent_area(area_data, renter)
     end
     local area_name = "RENTED_".. area_data.loaner .. "_".. os.time()
     local renter_list = core.deserialize(area_rent.metadata:get_string("renters"))
-    table.insert(renter_list,renter)
+    if not renter_list then
+        renter_list = {}
+    end
+    renter_list[renter] = true
     area_rent.metadata:set_string("renters",core.serialize(renter_list))
     --Add Record
     area_data.ID = area_rent.create_area(area_name,area_data)
@@ -131,18 +134,33 @@ function area_rent.sort(TBL,catagory)
 end
 
 function area_rent.areas_by_player(player, Status)
-    
     local storage_table = area_rent.metadata:to_table()
-    Status = string.upper(Status)
     local TBL = {}
-    player = Status .. "_" .. player
-    local name_len = string.len(player)
-    for area_name, area_description in pairs(storage_table["fields"]) do
-        --This next comment could be useful elsewhere. 
-        --core.chat_send_all("comparing "..area_name.." with "..player)
 
-        if string.sub(area_name,1,name_len) == player then
-            TBL[area_name] = area_description
+    if not Status then
+        local statuss = {"RENTED","CUED"}
+        for _, Status in ipairs(statuss) do
+            Status = string.upper(Status)
+            local prefix_player = Status .. "_" .. player
+            local name_len = string.len(prefix_player)
+            for area_name, area_description in pairs(storage_table["fields"]) do
+                --This next comment could be useful elsewhere. 
+                --core.chat_send_all("comparing "..area_name.." with "..player)
+                if string.sub(area_name,1,name_len) == prefix_player then
+                    TBL[area_name] = area_description
+                end
+            end    
+        end    
+        Status = nil
+    else
+        Status = string.upper(Status)
+        player = Status .. "_" .. player
+        local name_len = string.len(player)
+        for area_name, area_description in pairs(storage_table["fields"]) do
+            --This next comment could be useful elsewhere.
+            if string.sub(area_name,1,name_len) == player then
+                TBL[area_name] = area_description
+            end
         end
     end
 
@@ -228,6 +246,7 @@ function area_rent.charge()
     local last_day_charged = area_rent.metadata:get_int("last_charge_day") or 0
     local current_day = core.get_day_count()
     if (math.abs(current_day - last_day_charged) == 0) and (area_rent.day_interval ~= 0) then
+        -- No need to charge since it is not a new day. 
         return false
     end
 
@@ -238,19 +257,20 @@ function area_rent.charge()
         return false
     end
     -- parse through renteres list and charge each
-    for _, renter in ipairs(renters) do
+    for renter in pairs(renters) do
         local player_areas = area_rent.areas_by_player(renter,"rented")
         local XP = xp_redo.get_xp(renter)
 
         --Check to make sure renter can make payment
         while (not area_rent.qualify(renter,XP,0,2)) and (area_rent.tableLen(player_areas)) do
+            area_rent.debug(renter.." can not make payment, removing propery")
             local removed,message = area_rent.remove_area(renter)
             if not removed then
                 area_rent.debug("The removal function failed with this message: "..message)
                 break
             end
-            area_rent.remove_area(renter) -- Remove the smallest property and try again
-            
+            --area_rent.remove_area(renter) -- Remove the smallest property and try again
+            player_areas = area_rent.areas_by_player(renter,"rented")
         end
 
         -- Charge the player if they have properties
@@ -259,6 +279,7 @@ function area_rent.charge()
             for area_name,area_desc in pairs(player_areas) do
                 area_desc = core.deserialize(area_desc)
                 xp_redo.add_xp(renter, -area_desc.cost)
+                area_rent.debug("Charging "..renter.." area cost -$"..area_desc.cost)
                 if area_desc.owner ~= "SERVER" then
                     xp_redo.add_xp(area_desc.owner,area_desc.cost)
                 end
@@ -307,6 +328,7 @@ function area_rent.remove_area(renter,area_name)
     local ID
 
     if not area_name then
+        area_rent.debug("area was not specified. Finding the smallest")
         -- By default, find the smallest
         local player_areas = area_rent.areas_by_player(renter,"rented")
         player_areas = area_rent.sort(player_areas,"volume")
@@ -315,13 +337,13 @@ function area_rent.remove_area(renter,area_name)
             return false, "no properties"
         end
         area_name = player_areas[1]
-        
+        area_rent.debug("Found area ".. area_name)
     end
 
     local area_data = core.deserialize(area_rent.metadata:get_string(area_name))
-    
-    ID = 3
-    --ID = area_data.ID
+
+    ID = area_data.ID
+
     if not ID then
         -- ID Does not exist. 
         return false, "area_name"
@@ -334,9 +356,9 @@ function area_rent.remove_area(renter,area_name)
         return false, "owner"
     end
 
-    area_rent.metadata:set_string(area_name,nil)
     areas:remove(ID)
     areas:save()
+    area_rent.metadata:set_string(area_name,nil)
     return true
 end
 
@@ -350,3 +372,17 @@ end
 function area_rent.debug(text)
     core.log(area_rent.debuglevel,text)
 end
+
+function area_rent.get_area_by_ID(ID,player)
+    local player_areas = area_rent.areas_by_player(player,"rented")
+    for area_name, area_desc in pairs(player_areas) do
+        area_desc = core.deserialize(area_desc)
+        --core.chat_send_all("Comparing "..area_desc.ID .." to ".. ID )
+        --core.chat_send_all("Comparing "..type(area_desc.ID) .." to ".. type(ID) )
+        if area_desc.ID == ID then
+            return area_name
+        end
+    end
+    return false
+end
+

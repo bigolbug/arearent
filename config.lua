@@ -4,7 +4,8 @@ figure out how to get settings from the minetest config section.
 
 
 ]]--
-area_rent.debuglevel = "error" -- options "info" "none", "error", "warning", "action", or "verbose"
+area_rent.enabled = true
+area_rent.debuglevel = "info" -- options "info" "none", "error", "warning", "action", or "verbose"
 area_rent.startTime = os.clock()
 area_rent.metadata = core.get_mod_storage()
 area_rent.xp_hit = 4 -- This number represents the damage on a punch. Higher levels of damage indicate a powerful player. 
@@ -81,3 +82,17 @@ area_rent.price.outer = .0125
 area_rent.price.per.area = 2
 
 ]]--
+
+minetest.register_entity("area_rent:boarder", {
+	initial_properties = {
+		visual = "cube",
+		visual_size = {x=1.1, y=1.1},
+		textures = {"area_rent_fullframe.png", "area_rent_fullframe.png",
+		            "area_rent_fullframe.png", "area_rent_fullframe.png",
+		            "area_rent_fullframe.png", "area_rent_fullframe.png"},
+		collisionbox = {-0.55, -0.55, -0.55, 0.55, 0.55, 0.55},
+		hp_max = 1,
+		armor_groups = {fleshy=100},
+		static_save = false,
+	},
+})
