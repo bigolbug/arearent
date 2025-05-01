@@ -205,6 +205,7 @@ function area_rent.tableLen(TBL)
 
     if not TBL then
         core.chat_send_all("something is wrong 6534")
+        area_rent.debug("The table was not defined in the tableLen function")
         return false
     end
     
@@ -230,36 +231,20 @@ function area_rent.playsound(file)
 			core.sound_play(sound)
 end
 
-function area_rent.loop()
-    --Check to see when we charged last
-    if not area_rent.metadata:get_int("last_charge_date") then
-        core.after(area_rent.scan_interval,area_rent.loop)
-        area_rent.debug("Area rent has no rentals to charge")
-        return false
-    end
-    
-    area_rent.charge()
-    core.after(area_rent.scan_interval,area_rent.loop)
-end
-
 function area_rent.charge()
-    local last_day_charged = area_rent.metadata:get_int("last_charge_day") or 0
-    local current_day = core.get_day_count()
-    if (math.abs(current_day - last_day_charged) == 0) and (area_rent.day_interval ~= 0) then
-        -- No need to charge since it is not a new day. 
-        return false
-    end
-
     local renters = core.deserialize(area_rent.metadata:get_string("renters"))
 
     if not renters then
-        core.log("error","Renters does not exist in meta data. Renters variable type: "..type(renters))
+        area_rent.debug("Renters does not exist in meta data. Renters variable type: "..type(renters))
         return false
     end
+
     -- parse through renteres list and charge each
     for renter in pairs(renters) do
+
+        local XP = area_rent.metadata:get_int(renter.."XP")
         local player_areas = area_rent.areas_by_player(renter,"rented")
-        local XP = xp_redo.get_xp(renter)
+        
 
         --Check to make sure renter can make payment
         while (not area_rent.qualify(renter,XP,0,2)) and (area_rent.tableLen(player_areas)) do
@@ -278,16 +263,18 @@ function area_rent.charge()
             -- the player has active areas. 
             for area_name,area_desc in pairs(player_areas) do
                 area_desc = core.deserialize(area_desc)
-                xp_redo.add_xp(renter, -area_desc.cost)
-                area_rent.debug("Charging "..renter.." area cost -$"..area_desc.cost)
+                area_rent.updateXP(renter, -area_desc.cost)
+                area_rent.debug("Charging "..renter.." area cost -$"..area_desc.cost .. " New XP:"..area_rent.metadata:get_int(renter.."XP"))
                 if area_desc.owner ~= "SERVER" then
-                    xp_redo.add_xp(area_desc.owner,area_desc.cost)
+                    area_rent.updateXP(area_desc.owner,area_desc.cost)
+                    area_rent.debug("Transfering $"..area_desc.cost .. " to "..area_desc.owner..". New XP:"..area_rent.metadata:get_int(area_desc.owner.."XP"))
                 end
             end
         end
     end
 
-    area_rent.metadata:set_int("last_charge_date",os.time())
+
+    area_rent.metadata:set_int("last_charge_time",os.time())
     area_rent.metadata:set_int("last_charge_day",core.get_day_count())
     return true
 end
@@ -355,15 +342,14 @@ function area_rent.remove_area(renter,area_name)
         area_rent.debug("The Areas Mod does not agree that "..renter.." is the owner of area ID: "..ID)
         return false, "owner"
     end
-
+    area_rent.debug("Area removal: "..area_name.. " with ID:" .. ID)
+    area_rent.metadata:set_string(area_name,nil)
     areas:remove(ID)
     areas:save()
-    area_rent.metadata:set_string(area_name,nil)
     return true
 end
 
 function area_rent.create_area(area_name, area_data)
-    core.chat_send_all("You need to finish the create area function")
     local ID = areas:add(area_data.loaner, area_name, area_data.pos1, area_data.pos2, nil)
 	areas:save()
     return ID
@@ -386,3 +372,66 @@ function area_rent.get_area_by_ID(ID,player)
     return false
 end
 
+function area_rent.test(something)
+    if true then
+        local message = "Testing variable of type ".. type(something)
+        local typ = string.upper(type(something))
+        --This does not work as expected
+        if typ == "TABLE" then
+            message = message .. "\n\t\tHere are the Keys"
+            for key, value in pairs(something) do
+                message = message .. "\n\t\t\t\t"..key
+            end
+        elseif typ == "STRING" or typ == "NUMBER" then
+            message = message .. " and value ".. something
+        elseif typ == "OBJECTREF" then
+            -- Nothing to say
+        end
+        core.chat_send_all(message)
+        return false," investigation complete"
+    end    
+end
+
+function area_rent.clear_border(border)
+    local border_list = core.deserialize(area_rent.metadata:get_string("border_list"))
+    local positions = border_list[border]
+    for index, pos in ipairs(positions) do
+        pos = core.deserialize(pos)
+        local entitys = core.get_objects_inside_radius(pos, 0)
+        if entitys then
+            for i, entity in pairs(entitys) do
+                if string.upper(type(entity)) == "USERDATA" then
+                    entity:remove()
+                end
+                
+            end
+        end
+    end
+    border_list[border] = nil
+    area_rent.metadata:set_string("border_list",core.serialize(border_list))
+end
+
+function area_rent.updateXP(player,XP)
+    --XP will arrive with negative of posative. Posative is add and Negative is remove
+
+    if core.get_player_by_name(player) then
+        --Online
+        local prev_XP = xp_redo.get_xp(player)
+        local new_XP = prev_XP + XP
+        xp_redo.add_xp(player,XP)
+        area_rent.metadata:set_int(player.."XP",new_XP) 
+
+    else
+        --offline
+        local prev_XP = area_rent.metadata:get_int(player.."XP")
+        local new_XP = prev_XP + XP
+
+        if new_XP < 0 then
+            area_rent.metadata:set_int(player.."XP",0) 
+            area_rent.debug(player.. " has negative XP for their new_XP: "..new_XP)
+        else
+            area_rent.metadata:set_int(player.."XP",new_XP) 
+        end    
+    end
+    return true
+end

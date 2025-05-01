@@ -3,14 +3,15 @@ core.register_chatcommand("rent", {
 	params = "[action] [area ID]",
 	description = "Use status, area or nothing to manage, rent and check rental area\n"..
 	"Example: \n"..
-	"type /rent          to find out details about your rental area\n"..
-	"type /rent area     to rent an area\n"..
-	"type /rent status   for an update on your properties\n"..
-	"type /rent pos   	 to set the second area marker\n"
+	"type /rent          	to find out details about your rental area\n"..
+	"type /rent area     	to rent an area\n"..
+	"type /rent status   	for an update on your properties\n"..
+	"type /rent pos X,Y,Z  	to set the area markers. exclude X,Y,Z to select default area, set to 0 to use defaults\n"..
+	"type /rent    	 		to set the second area marker\n"
 	,
 	func = function(name, param)
 		-- define a local variables
-		local params = param:gmatch("([%a%d_]+)")
+		local params = param:gmatch("([%a%d_,]+)")
 		local action, area_ID = params(1), params(2)
 		if action ~= nil then action = string.upper(action) end
 		local player = core.get_player_by_name(name)
@@ -20,7 +21,7 @@ core.register_chatcommand("rent", {
 		local player_meta = player:get_meta()
 		local player_rent = player_meta:get_int("rent")
 		local pos = player:get_pos()
-		local XP = xp_redo.get_xp(name)
+		local XP = area_rent.metadata:get_int(name.."XP")
 		local area_data = {}
 		area_data["pos1"], area_data["pos2"] = areas:getPos(name)
 		area_data["owner"] = "SERVER"
@@ -71,18 +72,71 @@ core.register_chatcommand("rent", {
 			-- Check to see if an area needs to be selected. 
 			local player = core.get_player_by_name(name)
 			local pos = vector.round(player:get_pos())
-			pos.y = pos.y-1
-			areas:setPos1(name, pos)
-
+			local offset = {x=-1,y=-1,z=-1}
+			pos = vector.add(pos,offset)
 			local limit = {}
-			limit.x = area_rent.limit.w_max
-			limit.z = area_rent.limit.w_max
-			limit.y = math.floor(area_rent.limit.volume/(limit.x*limit.z))
-			
-			local pos = vector.add(pos,limit)
 
+			if area_ID then
+				local found, _, x, y, z = area_ID:find(
+				"^(-?%d*)[,](-?%d*)[,](-?%d*)$")
+
+				if found then
+					x=tonumber(x) z=tonumber(z) y=tonumber(y)
+					if not (x and y and z) then
+						return false, "Your X,Y,Z is wrong. Please adjust and retry"
+					end
+					if x > area_rent.limit.w_max then x = area_rent.limit.w_max end
+					if z > area_rent.limit.w_max then z = area_rent.limit.w_max end
+					if x == 0 and z == 0 and y ~= 0 then 
+						local width = area_rent.limit.volume/(y)
+						x = math.floor(math.sqrt(width)) 
+						z = math.floor(math.sqrt(width)) 
+					elseif x == 0 and z == 0 and y == 0 then 
+						x = area_rent.limit.w_max
+						z = area_rent.limit.w_max
+						y = math.floor(area_rent.limit.volume/(x*z))
+					elseif x == 0 and y ~= 0 then
+						x = math.floor(area_rent.limit.volume/(z*y))
+						if x > area_rent.limit.w_max then x = area_rent.limit.w_max end
+						if x < 3 then
+							return false, "Sorry your Z or Y is to big, try again with smaller values"
+						end
+					elseif z == 0 and y ~= 0 then
+						z = math.floor(area_rent.limit.volume/(x*y))
+						if z > area_rent.limit.w_max then z = area_rent.limit.w_max end
+						if z < 3 then
+							return false, "Sorry your X or Y is to big, try again with smaller values"
+						end
+					elseif x == 0 and y == 0 and z ~=0 then
+						x = area_rent.limit.w_max
+						y = math.floor(area_rent.limit.volume/(x*z))
+					elseif x ~= 0 and y == 0 and z == 0 then
+						z = area_rent.limit.w_max
+						y = math.floor(area_rent.limit.volume/(x*z))
+					elseif y == 0 then
+						y = math.floor(area_rent.limit.volume/(x*z))
+					end
+				else
+					return false,"Please write your area size as X,Y,Z. Y is height. Alternatively leave off to set default size"
+				end
+
+				if x == 0 or z == 0 or y == 0 then
+					return false, "Sorry something went wrong please report your command to the admin"
+				end
+
+				limit.x = x
+				limit.y = y
+				limit.z = z
+			else
+				limit.x = area_rent.limit.w_max
+				limit.z = area_rent.limit.w_max
+				limit.y = math.floor(area_rent.limit.volume/(limit.x*limit.z))
+			end
+			
+			areas:setPos1(name, pos)
+			local pos = vector.add(pos,limit)
 			areas:setPos2(name, pos)
-			return true, "The second location has been set"
+			return true, "Selection complete"
 		elseif action == "AREA"  then
 			--validate cue
 			local meta_table = area_rent.metadata:to_table()
@@ -92,6 +146,7 @@ core.register_chatcommand("rent", {
 			end
 			area_data = core.deserialize(area_descriptor)
 			if os.time() - area_data.time > area_rent.cue_expiration then
+				-- CUE Has expired
 				if not area_rent.qualify(name,XP,area_data.cost) then
 					local total_rent = player_rent + area_data.cost
 					local qualifying_XP = area_rent.qualifying_term * total_rent
@@ -110,43 +165,98 @@ core.register_chatcommand("rent", {
 		elseif action == "VIEW" then
 			local player = core.get_player_by_name(name)
 			local pos = vector.round(player:get_pos())
+			local player_areas = area_rent.areas_by_player(name)
+			local viewable_areas = {}
+			for area_name, area_desc in pairs(player_areas) do
+				local area_details = core.deserialize(area_desc)
+				local area_center = area_rent.center_pos(area_details.pos1,area_details.pos2)
+				local distance = vector.distance(pos, area_center)
+				if distance < area_rent.limit.viewable_dist then
+					viewable_areas[area_name] = area_desc
+				end
+			end
+
 			if not area_ID then
-				local player_areas = area_rent.areas_by_player(name)
+				if not area_rent.tableLen(viewable_areas)then
+					return false, "You either have no properties to view or none are close enough to view"
+				end
+
 				local message = "What area would you like to view?\n"
-				for area_name, area_desc in pairs(player_areas) do
+				for area_name, area_desc in pairs(viewable_areas) do
+
 					message = message .. "\t\t"..area_name.."\n"
 				end
 				return false, message
 			end
 
 			local area_desc = area_rent.metadata:get_string(area_ID)
-			if not area_desc then
+
+			if area_desc == "" or not area_desc then
 				return false, area_ID .. " is not a known area. \n\t\t Use --> /rent status <-- to see your areas"
 			end
 			
-			if true then
-				core.chat_send_all(type(area_desc))
-				if type(area_desc) == "table" then
-					for key, value in pairs(area_desc) do
-						core.chat_send_all(key)
-					end
-				end
-				return false," investigation complete"
-			end
 			area_desc = core.deserialize(area_desc)
 			
-			if area_desc.owner ~= name then
+			if area_desc.loaner ~= name then
 				return false, "You can not view this area since you are not the owner"
 			end
-			local entity = core.add_entity(pos, "area_rent:boarder")
-			--[[
-			if entity then
-				local luaentity = entity:get_luaentity()
-				if luaentity then
-					luaentity.player = name
-				end
+
+			-- create a border
+			local pos1 = area_desc.pos1
+			local pos2 = area_desc.pos2
+			local dx = pos2.x - pos1.x
+			local dy = pos2.y - pos1.y
+			local dz = pos2.z - pos1.z
+			local epos = {}
+			local border_list = core.deserialize(area_rent.metadata:get_string("border_list"))
+			local current_time = os.time()
+			local border_name = name..current_time
+			local entity
+			if not border_list or border_list == "" then
+				border_list = {}
 			end
-			]]
+			border_list[border_name] = {}
+
+			for y = 0, dy, 2 do
+				for x = 0, dx, 1 do
+					for z = 0, dz, 1 do
+						if x+pos1.x == pos1.x then
+							--Faces the negative X Direction
+							epos.x = pos1.x
+							epos.y = pos1.y + y
+							epos.z = pos1.z + z
+							entity = core.add_entity(epos, "area_rent:border_NX")
+							table.insert(border_list[border_name],core.serialize(epos))
+						elseif x+pos1.x == pos2.x then
+							--Faces the Posative X Direction
+							epos.x = pos2.x
+							epos.y = pos1.y + y
+							epos.z = pos1.z + z
+							entity = core.add_entity(epos, "area_rent:border_PX")	
+							table.insert(border_list[border_name],core.serialize(epos))
+						elseif z+pos1.z == pos1.z then
+							--Faces the eposative X Direction
+							epos.x = pos1.x + x
+							epos.y = pos1.y + y
+							epos.z = pos1.z
+							entity = core.add_entity(epos, "area_rent:border_NZ")	
+							table.insert(border_list[border_name],core.serialize(epos))
+						elseif z+pos1.z == pos2.z then
+							--Faces the eposative X Direction
+							epos.x = pos1.x + x
+							epos.y = pos1.y + y
+							epos.z = pos2.z
+							entity = core.add_entity(epos, "area_rent:border_PZ")	
+							table.insert(border_list[border_name],core.serialize(epos))
+						end
+					end
+				end
+				
+			end
+
+			area_rent.metadata:set_string("border_list",core.serialize(border_list))
+			core.after(area_rent.border_experation,area_rent.clear_border,border_name)
+
 		elseif action == "REMOVE" then
 			if not tonumber(area_ID) then
 				return false, "you must specify the area by ID number"
@@ -245,9 +355,9 @@ core.register_chatcommand("rent", {
 
 			--local area_center = vector
 
-			if area_id then
+			if area_ID then
 				-- is the player already the owner?
-				local area = areas.areas[area_id]
+				local area = areas.areas[area_ID]
 				return false, "Your selection itersects with another players area"
 			end
 		else
@@ -282,20 +392,32 @@ core.register_chatcommand("booyah", {
 ]]--
 
 core.register_chatcommand("rcmd",{
-	params = "[action]",
+	params = "[action] [data]",
 	privs = "server",
 	description = "Check the data of the Area Rental Mod: Options: clear, center and none for all data",
 	func = function(name, param)
-		local action = string.upper(param)
+		local params = param:gmatch("([%a%d_,]+)")
+		local action, data = params(1), params(2)
+		if action ~= nil then action = string.upper(action) end
+
 		if action == "CLEAR" then
 			local meta_data = area_rent.metadata:to_table()
-			for area_name, area_desc in pairs(meta_data["fields"]) do
-				local digits = string.gmatch(area_name,"[%d]+")
-				if digits then
-					core.chat_send_all("removing "..area_name.."           ".. area_desc)	
-					meta_data["fields"][area_name] = nil
+
+			if data then
+				if meta_data.fields[data] then
+					meta_data.fields[data] = nil
+				else
+					return false, "You may have missspelled your data type"	
 				end
-				
+			else
+				for area_name, area_desc in pairs(meta_data["fields"]) do
+					local digits = string.gmatch(area_name,"[%d]+")
+					if digits then
+						core.chat_send_all("removing "..area_name.."           ".. area_desc)	
+						meta_data["fields"][area_name] = nil
+					end
+					
+				end
 			end
 			area_rent.metadata:from_table(meta_data)
 		elseif action == "CENTER" then
@@ -304,6 +426,14 @@ core.register_chatcommand("rcmd",{
 			area_rent.metadata:set_string("center",center)
 			area_rent.metadata:set_int("setup",1)
 			area_rent.debug("Set the area rent center to "..center)
+		elseif action == "XP" then
+			if not tonumber(data) then
+				return false, "You need to enter a number"
+			end
+			
+			area_rent.updateXP(name,data)
+		elseif action == "XP_DEBUG" then
+			return true, "Your XP from XP redo: " .. xp_redo.get_xp(name)
 		elseif action == "CHARGE" then
 			if not area_rent.charge() then
 				return false, "You can only charge once per day."

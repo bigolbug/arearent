@@ -14,10 +14,16 @@ area_rent.qualifying_term = 30
 area_rent.cue_expiration = 60
 area_rent.day_interval = core.settings:get("time_speed") + 0
 area_rent.scan_interval = area_rent.day_interval / 10
+area_rent.border_experation = 30
+
 if area_rent.scan_interval == 0 then
     area_rent.scan_interval = 5 
 end
 area_rent.start_day = core.get_day_count()
+
+if area_rent.metadata:get_string("border_list") then
+    area_rent.metadata:set_string("border_list",nil)
+end
 
 --if center is not set log that center should be set and disable rental
 if not area_rent.metadata:contains("center") then
@@ -45,7 +51,8 @@ area_rent.limit = {
     w_max = 20, -- Max Width
     w_min = 3,
     properties = 10,
-    volume = 5000
+    volume = 5000,
+    viewable_dist = 50
 }
 area_rent.price = {
     rate = function (x)
@@ -64,10 +71,10 @@ core.register_on_punchplayer(function(player, hitter, time_from_last_punch, tool
     local playername = player:get_player_name()
     local hittername = hitter:get_player_name()
     if damage > area_rent.xp_hit then
-        xp_redo.add_xp(hittername,-1)
+        arae_rent.updateXP(hittername,-10)
     end
-    core.chat_send_all(damage)
-    core.chat_send_all(time_from_last_punch)
+    --core.chat_send_all(damage)
+    --core.chat_send_all(time_from_last_punch)
 end)
 
 --[[
@@ -83,13 +90,61 @@ area_rent.price.per.area = 2
 
 ]]--
 
-minetest.register_entity("area_rent:boarder", {
+core.register_entity("area_rent:border_NX", {
 	initial_properties = {
 		visual = "cube",
-		visual_size = {x=1.1, y=1.1},
-		textures = {"area_rent_fullframe.png", "area_rent_fullframe.png",
-		            "area_rent_fullframe.png", "area_rent_fullframe.png",
-		            "area_rent_fullframe.png", "area_rent_fullframe.png"},
+		visual_size = {x=1, y=1},
+		textures = {"area_rent_transparent.png","area_rent_transparent.png",
+            "area_rent_transparent.png", "area_rent_fullframe.png",
+            "area_rent_transparent.png","area_rent_transparent.png"},
+		collisionbox = {-0.55, -0.55, -0.55, 0.55, 0.55, 0.55},
+		hp_max = 1,
+		armor_groups = {fleshy=100},
+		static_save = false,
+	},
+})
+core.register_entity("area_rent:border_PX", {
+	initial_properties = {
+		visual = "cube",
+		visual_size = {x=1, y=1},
+        textures = {"area_rent_transparent.png",-- +Y
+        "area_rent_transparent.png",-- -Y
+        "area_rent_fullframe.png",-- +X
+        "area_rent_transparent.png",-- -X
+        "area_rent_transparent.png",-- +Z
+        "area_rent_transparent.png"},-- -Z
+		collisionbox = {-0.55, -0.55, -0.55, 0.55, 0.55, 0.55},
+		hp_max = 1,
+		armor_groups = {fleshy=100},
+		static_save = false,
+	},
+})
+core.register_entity("area_rent:border_PZ", {
+	initial_properties = {
+		visual = "cube",
+		visual_size = {x=1, y=1},
+		textures = {"area_rent_transparent.png",-- +Y
+        "area_rent_transparent.png",-- -Y
+        "area_rent_transparent.png",-- +X
+        "area_rent_transparent.png",-- -X
+        "area_rent_fullframe.png",-- +Z
+        "area_rent_transparent.png"},-- -Z
+		collisionbox = {-0.55, -0.55, -0.55, 0.55, 0.55, 0.55},
+		hp_max = 1,
+		armor_groups = {fleshy=100},
+		static_save = false,
+	},
+})
+core.register_entity("area_rent:border_NZ", {
+	initial_properties = {
+		visual = "cube",
+		visual_size = {x=1, y=1},
+		textures = {"area_rent_transparent.png",-- +Y
+        "area_rent_transparent.png",-- -Y
+        "area_rent_transparent.png",-- +X
+        "area_rent_transparent.png",-- -X
+        "area_rent_transparent.png",-- +Z
+        "area_rent_fullframe.png"},-- -Z
 		collisionbox = {-0.55, -0.55, -0.55, 0.55, 0.55, 0.55},
 		hp_max = 1,
 		armor_groups = {fleshy=100},
