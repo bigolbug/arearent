@@ -5,7 +5,7 @@ figure out how to get settings from the minetest config section.
 
 ]]--
 area_rent.enabled = true
-area_rent.debuglevel = "info" -- options "info" "none", "error", "warning", "action", or "verbose"
+area_rent.debuglevel = "error" -- options "info" "none", "error", "warning", "action", or "verbose"
 area_rent.startTime = os.clock()
 area_rent.metadata = core.get_mod_storage()
 area_rent.xp_hit = 4 -- This number represents the damage on a punch. Higher levels of damage indicate a powerful player. 
@@ -15,31 +15,45 @@ area_rent.cue_expiration = 60
 area_rent.day_interval = core.settings:get("time_speed") + 0
 area_rent.scan_interval = area_rent.day_interval / 10
 area_rent.border_experation = 30
+area_rent.start_day = core.get_day_count()
 
 if area_rent.scan_interval == 0 then
     area_rent.scan_interval = 5 
 end
-area_rent.start_day = core.get_day_count()
+
+local cued_list = core.deserialize(area_rent.metadata:get_string("CUED"))
+if not cued_list then
+    core.log("Info","Initializing cued list in meta")
+    cued_list = {}
+    area_rent.metadata:set_string("CUED",core.serialize(cued_list))
+end
+
+local rented_list = core.deserialize(area_rent.metadata:get_string("RENTED"))
+if not rented_list then
+    core.log("Info","Initializing rented list in meta")
+    rented_list = {}
+    area_rent.metadata:set_string("RENTED",core.serialize(rented_list))
+end
 
 if area_rent.metadata:get_string("border_list") then
-    area_rent.metadata:set_string("border_list",nil)
+    -- Reset any board list data
+    area_rent.metadata:set_string("border_list","")
 end
 
 --if center is not set log that center should be set and disable rental
 if not area_rent.metadata:contains("center") then
     --Log entry...
-    area_rent.debug("Area rent center not set")
+    core.log("Info","Area rent center not set")
     area_rent.metadata:set_int("setup",0) -- TODO add entry for all commands that tells us to set center    
 end
 
---Initialize Renter List
+--Initialize Renter List !!! We don't need this anymore
 if not area_rent.metadata:contains("renters") then
     --Add Log entry??
     local renters = {}
-    core.log("error","Renters Table not set, creating entry")
+    core.log("Info","Renters Table not set, creating entry")
     area_rent.metadata:set_string("renters",core.serialize(renters)) -- TODO add entry for all commands that tells us to set center
 end
-
 
 --Limit and inflation
 -- We need to keep track of how many properties or the amount of the map
@@ -76,6 +90,29 @@ core.register_on_punchplayer(function(player, hitter, time_from_last_punch, tool
     --core.chat_send_all(damage)
     --core.chat_send_all(time_from_last_punch)
 end)
+
+area_rent.adj = {
+    "rocky","layered","cracked","eroded","weathered","volcanic",
+    "muddy","sandy","hard","soft","bumpy","smooth","steep","flat",
+    "tilted","dense","porous","dry","wet","strated","soggy","poisonous",
+    "terrible","dangerous","wild","tiny"
+}
+
+area_rent.noun = {
+    "rock","sand","dirt","clay","soil","lava","mud","stone","boulder","pebble","crack",
+    "hole","ground","water"
+}
+
+area_rent.formation = {
+    "mountain","hill","valley","cave","cliff","volcano","island","plateau",
+    "canyon","desert","plain","beach","river","lake","waterfall","glacier"
+}
+
+--Initializing Meta Data
+local last_scan = area_rent.metadata:get_int("last_scan")
+if last_scan == 0 then
+    area_rent.metadata:set_int("last_scan",os.time())
+end
 
 --[[
 area_rent.limit.price = {}

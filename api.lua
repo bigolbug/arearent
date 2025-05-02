@@ -59,14 +59,59 @@ function area_rent.greifer_check(x,y,z,player)
 end
 
 function area_rent.cue_Area(area_data)
-    local area_name = "CUED_".. area_data.loaner .. "_".. os.time()
+    --[[
+    --Use this code if you want the abreviation of the player
+    local _ = string.find(area_data.loaner,"_")
+    local player_abrev  = ""
+    if _ then 
+        --First Initial Last Initial
+        player_abrev = string.sub(area_data.loaner,1,1)..string.sub(area_data.loaner,_+1,_+1) 
+    else
+        --First two initials
+        player_abrev = string.sub(area_data.loaner,1,2)
+    end
+    local time_abrev = string.gmatch(tostring(os.time()),"(%d%d%d)$")
+    local area_name = player_abrev .. time_abrev(1)
+    ]]
+
+    area_data.name = area_rent.adj[math.random(#area_rent.adj)] .. 
+    "_" .. area_rent.noun[math.random(#area_rent.noun)] .. 
+    "_" .. area_rent.formation[math.random(#area_rent.formation)]
     
     --Check for stale areas
-    local cued_Areas = area_rent.areas_by_player(area_data.loaner, "CUED")
+    local cued_Areas = area_rent.get_areas_by_player(area_data.loaner, "CUED")
 
-    --Add Record
-    area_rent.metadata:set_string(area_name, core.serialize(area_data))
-    return area_name
+    local cued_list = core.deserialize(area_rent.metadata:get_string("CUED"))
+
+    if not cued_list[area_data.loaner] then
+        cued_list[area_data.loaner] = {}
+    end
+    cued_list[area_data.loaner][area_data.time] = area_data
+
+    area_rent.metadata:set_string("CUED", core.serialize(cued_list))
+    return area_data.name
+end
+
+function area_rent.get_area_by_name(search_name,owner)
+    local cued_Areas = core.deserialize(area_rent.metadata:get_string("CUED"))
+    local rented_Areas = core.deserialize(area_rent.metadata:get_string("RENTED"))
+    local TBL = {}
+    if rented_Areas[owner] then
+        for area_name, area_des in pairs(rented_Areas[owner]) do
+            if area_des.name == search_name then
+                return area_des
+            end
+        end
+    end
+    
+    if cued_Areas[owner] then
+        for area_name, area_des in pairs(cued_Areas[owner]) do
+            if area_des.name == search_name then
+                return area_des
+            end
+        end
+    end
+    return false
 end
 
 function area_rent.rent_area(area_data, renter)
@@ -75,18 +120,21 @@ function area_rent.rent_area(area_data, renter)
         area_data.owner = area_data.loaner
         area_data.loaner = renter
     end
-    local area_name = "RENTED_".. area_data.loaner .. "_".. os.time()
-    local renter_list = core.deserialize(area_rent.metadata:get_string("renters"))
+    
+    local renter_list = core.deserialize(area_rent.metadata:get_string("RENTERS"))
     if not renter_list then
         renter_list = {}
     end
-    renter_list[renter] = true
-    area_rent.metadata:set_string("renters",core.serialize(renter_list))
-    --Add Record
-    area_data.ID = area_rent.create_area(area_name,area_data)
-    area_rent.metadata:set_string(area_name, core.serialize(area_data))
     
-    return area_name
+    if not renter_list[renter] then
+        renter_list[renter] = {}
+    end
+    renter_list[renter][area_data.time]=area_data
+    area_rent.metadata:set_string("RENTERS",core.serialize(renter_list))
+    --Add Record
+    area_rent.create_area(area_data)
+    
+    return true
 end
 
 function area_rent.add_zeros(number)
@@ -109,7 +157,6 @@ function area_rent.sort(TBL,catagory)
     if catagory then 
         --sort based on catagory
         for area_name, area_desc in pairs(TBL) do
-            area_desc = core.deserialize(area_desc)
             if not area_desc[catagory] then
                 core.log("error","The Area Rent mod failed in the sort function, catagory not found")
                 return false
@@ -121,59 +168,74 @@ function area_rent.sort(TBL,catagory)
         table.sort(sort_areas)
         --Strip the catagory
         for i, area_name in ipairs(sort_areas) do
-            areas[i] = string.gsub (area_name,"^%d+%.","")
+            sort_areas[i] = string.gsub (area_name,"^%d+%.","")
         end
     else
         --Sort table, newest to oldest
-        for area_name, area_des in pairs(TBL) do table.insert(sort_areas, area_name) end
-        table.sort(areas)
+        for area_name, area_des in pairs(TBL) do 
+            table.insert(sort_areas, area_name) 
+        end
+        table.sort(sort_areas)
     end    
 
-
-    return areas
+    return sort_areas
 end
 
-function area_rent.areas_by_player(player, Status)
-    local storage_table = area_rent.metadata:to_table()
-    local TBL = {}
+function area_rent.areas_by_player()
+    core.chat_send_all("There is still a function using the old areas by player function")
+    return false
+end
 
+function area_rent.get_areas_by_player(player, Status)
+    local TBL = {}
+    local rented_areas = core.deserialize(area_rent.metadata:get_string("RENTED"))
+    local cued_areas = core.deserialize(area_rent.metadata:get_string("CUED"))
+    
     if not Status then
-        local statuss = {"RENTED","CUED"}
-        for _, Status in ipairs(statuss) do
-            Status = string.upper(Status)
-            local prefix_player = Status .. "_" .. player
-            local name_len = string.len(prefix_player)
-            for area_name, area_description in pairs(storage_table["fields"]) do
-                --This next comment could be useful elsewhere. 
-                --core.chat_send_all("comparing "..area_name.." with "..player)
-                if string.sub(area_name,1,name_len) == prefix_player then
-                    TBL[area_name] = area_description
-                end
+        -- No status was specified, using both rented and cued
+        local RENTED = rented_areas[player]
+        if RENTED then
+            for area_ID, area_data in pairs(RENTED) do
+                TBL[area_ID] = area_data -- The area data on this is already deserialized
             end    
-        end    
-        Status = nil
-    else
-        Status = string.upper(Status)
-        player = Status .. "_" .. player
-        local name_len = string.len(player)
-        for area_name, area_description in pairs(storage_table["fields"]) do
-            --This next comment could be useful elsewhere.
-            if string.sub(area_name,1,name_len) == player then
-                TBL[area_name] = area_description
+        end
+        
+        local CUED = cued_areas[player]
+        if CUED then
+            for area_ID, area_data in pairs(CUED) do
+                TBL[area_ID] = area_data -- The area data on this is already deserialized
+            end
+        end
+        
+    elseif string.upper(Status) == "RENTED" then
+        local RENTED = rented_areas[player]
+        if RENTED then
+            for area_ID, area_data in pairs(RENTED) do
+                TBL[area_ID] = area_data -- The area data on this is already deserialized
+            end    
+        end
+
+    elseif string.upper(Status) == "CUED" then        
+        local CUED = cued_areas[player]
+        if CUED then
+            for area_ID, area_data in pairs(CUED) do
+                TBL[area_ID] = area_data -- The area data on this is already deserialized
             end
         end
     end
 
     if Status == "CUED" then
-        local cued_areas = area_rent.sort(TBL)
+        local sorted_areas = area_rent.sort(TBL)
+        area_rent.debug("Looks like we have "..#sorted_areas.." cued areas")
         -- If there are 5 or more then update Meta data
-        while #cued_areas > area_rent.cueable_Area_Limit do
-            area_rent.metadata:set_string(cued_areas[1],nil)
-            TBL[areas[1]] = nil
-            table.remove(cued_areas,1)
-        end    
+        while #sorted_areas > area_rent.cueable_Area_Limit do
+            cued_areas[player][sorted_areas[1]] = nil
+            TBL[sorted_areas[1]] = nil
+            table.remove(sorted_areas,1)
+        end 
+        area_rent.metadata:set_string("CUED",core.serialize(cued_areas))
     end
-    
+
     return TBL
 end
 
@@ -182,12 +244,11 @@ function area_rent.qualify(name,XP,cost,term)
     term = term or area_rent.qualifying_term
     -- get all the properties of a player
     local Total_Properties_Cost = cost
-    local player_properties = area_rent.areas_by_player(name,"RENTED")
+    local player_properties = area_rent.get_areas_by_player(name,"RENTED")
     
     --Count up the cost for all rentals
     if area_rent.tableLen(player_properties) then
         for area_name,area_data in pairs(player_properties) do
-            area_data = core.deserialize(area_data)
             Total_Properties_Cost = Total_Properties_Cost + area_data.cost
         end
     end
@@ -204,7 +265,6 @@ function area_rent.tableLen(TBL)
     local count = 0
 
     if not TBL then
-        core.chat_send_all("something is wrong 6534")
         area_rent.debug("The table was not defined in the tableLen function")
         return false
     end
@@ -232,18 +292,19 @@ function area_rent.playsound(file)
 end
 
 function area_rent.charge()
-    local renters = core.deserialize(area_rent.metadata:get_string("renters"))
+    local rentals = core.deserialize(area_rent.metadata:get_string("RENTED"))
 
-    if not renters then
-        area_rent.debug("Renters does not exist in meta data. Renters variable type: "..type(renters))
+    if not rentals then
+        --!!! Check to see if there are any areas rented
+        area_rent.debug("Renters does not exist in meta data. Renters variable type: "..type(rentals))
         return false
     end
 
     -- parse through renteres list and charge each
-    for renter in pairs(renters) do
+    for renter in pairs(rentals) do
 
         local XP = area_rent.metadata:get_int(renter.."XP")
-        local player_areas = area_rent.areas_by_player(renter,"rented")
+        local player_areas = area_rent.get_areas_by_player(renter,"rented")
         
 
         --Check to make sure renter can make payment
@@ -255,14 +316,13 @@ function area_rent.charge()
                 break
             end
             --area_rent.remove_area(renter) -- Remove the smallest property and try again
-            player_areas = area_rent.areas_by_player(renter,"rented")
+            player_areas = area_rent.get_areas_by_player(renter,"rented")
         end
 
         -- Charge the player if they have properties
         if area_rent.tableLen(player_areas) then
             -- the player has active areas. 
             for area_name,area_desc in pairs(player_areas) do
-                area_desc = core.deserialize(area_desc)
                 area_rent.updateXP(renter, -area_desc.cost)
                 area_rent.debug("Charging "..renter.." area cost -$"..area_desc.cost .. " New XP:"..area_rent.metadata:get_int(renter.."XP"))
                 if area_desc.owner ~= "SERVER" then
@@ -280,8 +340,8 @@ function area_rent.charge()
 end
 
 function area_rent.check_balance(name)
-    local cued_Areas = area_rent.areas_by_player(name,"CUED")
-    local Rented_Areas = area_rent.areas_by_player(name,"RENTED")
+    local cued_Areas = area_rent.get_areas_by_player(name,"CUED")
+    local Rented_Areas = area_rent.get_areas_by_player(name,"RENTED")
     local message = ""
 
     --core.chat_send_all(Rented_table_Len)
@@ -289,7 +349,6 @@ function area_rent.check_balance(name)
         message = message .. "\n\tYour rented areas are..."
         local Total_cost = 0
         for Area_Name, Area_description in pairs(Rented_Areas) do
-            local area_data = core.deserialize(Area_description)
             Total_cost = Total_cost + area_data.cost
             message = message .. "\n\t" .. Area_Name
         end
@@ -317,7 +376,7 @@ function area_rent.remove_area(renter,area_name)
     if not area_name then
         area_rent.debug("area was not specified. Finding the smallest")
         -- By default, find the smallest
-        local player_areas = area_rent.areas_by_player(renter,"rented")
+        local player_areas = area_rent.get_areas_by_player(renter,"rented")
         player_areas = area_rent.sort(player_areas,"volume")
         if not player_areas then
             -- this player has no areas to remove. 
@@ -327,7 +386,11 @@ function area_rent.remove_area(renter,area_name)
         area_rent.debug("Found area ".. area_name)
     end
 
-    local area_data = core.deserialize(area_rent.metadata:get_string(area_name))
+    local rented_areas = core.deserialize(area_rent.metadata:get_string("RENTED"))
+    local area_data = area_rent.get_area_by_name(area_name)
+    if not area_data then
+        return false, "area_data"
+    end
 
     ID = area_data.ID
 
@@ -343,16 +406,28 @@ function area_rent.remove_area(renter,area_name)
         return false, "owner"
     end
     area_rent.debug("Area removal: "..area_name.. " with ID:" .. ID)
-    area_rent.metadata:set_string(area_name,nil)
+    rented_areas.renter.area_name = nil
+    area_rent.metadata:set_string(area_name,"")
     areas:remove(ID)
     areas:save()
     return true
 end
 
-function area_rent.create_area(area_name, area_data)
-    local ID = areas:add(area_data.loaner, area_name, area_data.pos1, area_data.pos2, nil)
-	areas:save()
-    return ID
+function area_rent.create_area(area_data)
+    local rental_data = core.deserialize(area_rent.metadata:get_string("RENTED"))
+    if not rental_data then
+        rental_data = {}
+    end
+    local player_rental_data = rental_data[area_data.loaner]
+    if not player_rental_data then
+        rental_data[area_data.loaner] = {}
+    end
+    --table.insert(player_rental_data,core.serialize(area_data)) Use this if you don't need area ID's
+    area_data.ID = areas:add(area_data.loaner, area_data.name, area_data.pos1, area_data.pos2, nil)
+    areas:save()
+    rental_data[area_data.loaner][area_data.name] = area_data
+    area_rent.metadata:set_string("RENTED", core.serialize(rental_data))
+    return area_data.ID
 end
 
 function area_rent.debug(text)
@@ -360,11 +435,8 @@ function area_rent.debug(text)
 end
 
 function area_rent.get_area_by_ID(ID,player)
-    local player_areas = area_rent.areas_by_player(player,"rented")
+    local player_areas = area_rent.get_areas_by_player(player,"rented")
     for area_name, area_desc in pairs(player_areas) do
-        area_desc = core.deserialize(area_desc)
-        --core.chat_send_all("Comparing "..area_desc.ID .." to ".. ID )
-        --core.chat_send_all("Comparing "..type(area_desc.ID) .." to ".. type(ID) )
         if area_desc.ID == ID then
             return area_name
         end

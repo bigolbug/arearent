@@ -27,7 +27,7 @@ core.register_chatcommand("rent", {
 		area_data["owner"] = "SERVER"
 		area_data["loaner"] = name
 		area_data["cost"] = nil
-		area_data["time"] = os.time()
+		area_data["time"] = tostring(os.time())
 
 		if action == "STATUS" then
 			local message = "You have "..XP.." xp. "
@@ -40,20 +40,19 @@ core.register_chatcommand("rent", {
 			else
 
 			end
-			local cued_Areas = area_rent.areas_by_player(name,"CUED")
-			local Rented_Areas = area_rent.areas_by_player(name,"RENTED")
+			local cued_Areas = area_rent.get_areas_by_player(name,"CUED")
+			local Rented_Areas = area_rent.get_areas_by_player(name,"RENTED")
 	
 			--core.chat_send_all(Rented_table_Len)
 			if area_rent.tableLen(Rented_Areas) then
 				message = message .. "\n\tYour rented areas are..."
 				local Total_cost = 0
 				for Area_Name, Area_desc in pairs(Rented_Areas) do
-					local area_data = core.deserialize(Area_desc)
-					Total_cost = Total_cost + area_data.cost
-					message = message .. "\n\t" .. Area_Name
+					Total_cost = Total_cost + Area_desc.cost
+					message = message .. "\n\t\t\tArea ID: " .. Area_desc.ID.. " with name ".. Area_desc.name
 				end
 				-- !!! Here is a good place to check for discrepencies between player_rent and total_cost
-				message = message .. "\n\tCosting: " .. Total_cost .. " xp per day"
+				message = message .. "\n\t\tCosting: " .. Total_cost .. " xp per day"
 			else
 				message = message .. "\n\tYou have no properties rented"
 			end
@@ -61,13 +60,13 @@ core.register_chatcommand("rent", {
 			if area_rent.tableLen(cued_Areas) then
 				message = message .. "\n\tYour cued areas are..."
 				for Area_Name, Area_description in pairs(cued_Areas) do
-					message = message .. "\n\t" .. Area_Name
+					message = message .. "\n\t\t\t" .. Area_description.name
 				end
 			else
 				message = message .. "\n\tYou have no properties cued"
 			end
 
-			return false, message
+			return true, message
 		elseif action == "POS"  then	
 			-- Check to see if an area needs to be selected. 
 			local player = core.get_player_by_name(name)
@@ -139,37 +138,41 @@ core.register_chatcommand("rent", {
 			return true, "Selection complete"
 		elseif action == "AREA"  then
 			--validate cue
-			local meta_table = area_rent.metadata:to_table()
-			local area_descriptor = meta_table["fields"][area_ID]
-			if not area_descriptor then
-				return false, area_ID .. " is not a known cue. \n\t\t Use --> /rent status <-- to see your cued areas"
+			local cued_Areas = core.deserialize(area_rent.metadata:get_string("CUED"))
+			if not cued_Areas then
+				area_rent.debug("Oops. There are no Cues in meta data")
 			end
-			area_data = core.deserialize(area_descriptor)
-			if os.time() - area_data.time > area_rent.cue_expiration then
+			if not cued_Areas[name] then
+				return false, name .. " does not have any cued areas\n\t\t Use --> /rent <-- to cue an area"
+			end
+			local area_desc = area_rent.get_area_by_name(area_ID,name)
+			if not area_desc then
+				return false, "You might have missspelled the area name. \n\t\t Use --> /rent status <-- to see your cued areas"
+			end
+		
+			if os.time() - area_desc.time > area_rent.cue_expiration then
 				-- CUE Has expired
-				if not area_rent.qualify(name,XP,area_data.cost) then
-					local total_rent = player_rent + area_data.cost
+				if not area_rent.qualify(name,XP,area_desc.cost) then
+					local total_rent = player_rent + area_desc.cost
 					local qualifying_XP = area_rent.qualifying_term * total_rent
 					local XP_difference = qualifying_XP - XP
 					return false, "You no longer qualify for this area. You need "..XP_difference.." more XP. Increase your XP and try again"
 				end
-				area_data.time = os.time()
+				area_desc.time = os.time()
 			end
 
 			--remove Que
-			meta_table["fields"][area_ID] = nil
-			area_rent.metadata:from_table(meta_table)
-
-			area_rent.rent_area(area_data,name)
+			cued_Areas[name][area_desc.name] = nil
+			area_rent.metadata:set_string("CUED",core.serialize(cued_Areas))			
+			area_rent.rent_area(area_desc,name)
 			return false, "Rental complete"
 		elseif action == "VIEW" then
 			local player = core.get_player_by_name(name)
 			local pos = vector.round(player:get_pos())
-			local player_areas = area_rent.areas_by_player(name)
+			local player_areas = area_rent.get_areas_by_player(name)
 			local viewable_areas = {}
 			for area_name, area_desc in pairs(player_areas) do
-				local area_details = core.deserialize(area_desc)
-				local area_center = area_rent.center_pos(area_details.pos1,area_details.pos2)
+				local area_center = area_rent.center_pos(area_desc.pos1,area_desc.pos2)
 				local distance = vector.distance(pos, area_center)
 				if distance < area_rent.limit.viewable_dist then
 					viewable_areas[area_name] = area_desc
@@ -183,21 +186,24 @@ core.register_chatcommand("rent", {
 
 				local message = "What area would you like to view?\n"
 				for area_name, area_desc in pairs(viewable_areas) do
-
-					message = message .. "\t\t"..area_name.."\n"
+					if tonumber(area_name) then
+						message = message .. "\t\t"..area_desc.name.."\n"
+					else
+						message = message .. "\t\t"..area_name.."\n"
+					end
+					
 				end
 				return false, message
 			end
 
-			local area_desc = area_rent.metadata:get_string(area_ID)
+			local area_desc = area_rent.get_area_by_name(area_ID,name)
 
-			if area_desc == "" or not area_desc then
+			if not area_desc then
 				return false, area_ID .. " is not a known area. \n\t\t Use --> /rent status <-- to see your areas"
 			end
-			
-			area_desc = core.deserialize(area_desc)
-			
+
 			if area_desc.loaner ~= name then
+				area_rent.debug(name .. " is trying to view "..area_desc.loaner .. "'s property called "..area_desc.name)
 				return false, "You can not view this area since you are not the owner"
 			end
 
@@ -212,7 +218,7 @@ core.register_chatcommand("rent", {
 			local current_time = os.time()
 			local border_name = name..current_time
 			local entity
-			if not border_list or border_list == "" then
+			if not border_list then
 				border_list = {}
 			end
 			border_list[border_name] = {}
@@ -258,10 +264,16 @@ core.register_chatcommand("rent", {
 			core.after(area_rent.border_experation,area_rent.clear_border,border_name)
 
 		elseif action == "REMOVE" then
-			if not tonumber(area_ID) then
+			local rented_properties = core.deserialize(area_rent.metadata:get_string("RENTED"))
+			if not rented_properties then
+				return false, "There are no properties to remove"
+			end
+
+			local ID = tonumber(area_ID)
+			if not ID then
 				return false, "you must specify the area by ID number"
 			end 
-			local ID = tonumber(area_ID)
+			
 			--Is the sender the owner?
 			if not areas:isAreaOwner(ID, name) then
 				return false, "You must be the owner of the area to remove it"
@@ -273,7 +285,8 @@ core.register_chatcommand("rent", {
 				return false, "You do not have an area with that ID number"
 			end
 
-			area_rent.metadata:set_string(area_name,nil)
+			rented_properties[name][area_name] = nil
+			area_rent.metadata:set_string("RENTED",core.serialize(rented_properties))
 			areas:remove(ID)
 			areas:save()
 			return true, "Area ".. area_name.." with ID ".. ID .. " has been removed. Check /rent Status to cofirm"
@@ -282,7 +295,7 @@ core.register_chatcommand("rent", {
 			-- Check to see if mod is enabled
 			local ar_center = core.deserialize(area_rent.metadata:get_string("center"))
 			if not ar_center then
-				return false, "Area rent mod is not setup, please set a center with /rdata center"
+				return false, "Area rent mod is not setup. Ask your admin to set a center with /rcmd center"
 			end
 
 			-- Check to see if an area needs to be selected. 
@@ -292,6 +305,8 @@ core.register_chatcommand("rent", {
 			
 			--Check for intersecting areas and determine action. 
 			local intersecting_areas = areas:getAreasIntersectingArea(area_data.pos1, area_data.pos2)
+			area_rent.debug("There are ".. #intersecting_areas .. " intersecting araes")
+			area_rent.debug("intersecting araes variable type: "..type(#intersecting_areas))
 			--This is were you would find out if the player owns the area. 
 			if #intersecting_areas > 0 then
 				return false, "At this time you can not rent this area since it intersects with another"
@@ -434,6 +449,20 @@ core.register_chatcommand("rcmd",{
 			area_rent.updateXP(name,data)
 		elseif action == "XP_DEBUG" then
 			return true, "Your XP from XP redo: " .. xp_redo.get_xp(name)
+		elseif action == "CUED" then
+			core.chat_send_player(name,"Accessing CUED Data")
+			local cued_areas = core.deserialize(area_rent.metadata:get_string("CUED")) 
+			if not cued_areas then
+				return false, "Can't access cued data"
+			end
+			for player, area in pairs(cued_areas) do
+				core.chat_send_player(name,player.." has cued data. Their properties are")
+				for area_name, area_data in pairs(area) do
+					core.chat_send_player(name,area_name .. " with name "..area_data.name)
+				end
+			end
+			return true
+		elseif action == "RENTED" then
 		elseif action == "CHARGE" then
 			if not area_rent.charge() then
 				return false, "You can only charge once per day."
