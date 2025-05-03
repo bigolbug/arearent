@@ -381,30 +381,6 @@ core.register_chatcommand("rent", {
 		end
 	end
 })
---[[
-core.register_chatcommand("booyah", {
-	params = "[PlayerName]",
-	description = "Committal statement to rent selection and agreement",
-	func = function(name, param)
-		local ownerName = param
-		local player = core.get_player_by_name(name)
-		local pos = player:get_pos()
-		
-		-- Check to see if PlayerName is valid
-		if not areas:player_exists(name) then
-			return false, S("The player \"@1\" does not exist.", ownerName)
-		end
-
-		--Check to see of we can bypass limits
-		if name and core.check_player_privs(name, "server") then 
-			return true, "You are an admin"
-		end
-
-
-
-	end,
-})
-]]--
 
 core.register_chatcommand("rcmd",{
 	params = "[action] [data]",

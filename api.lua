@@ -10,15 +10,11 @@ area_rent.clip = function(area)
 end
 
 -- Check to see if user is admin
-function area_rent:admin(name,priv)
-    if minetest.check_player_privs(name,priv) then
+function area_rent.admin(name,priv)
+    if core.check_player_privs(name,priv) then
         return true
     end
     return false
-end
-
-function area_rent:splitter(params)
-
 end
 
 function area_rent.center_pos(pos1,pos2)
