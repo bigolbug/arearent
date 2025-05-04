@@ -13,13 +13,9 @@ area_rent.cueable_Area_Limit = 5
 area_rent.qualifying_term = 30
 area_rent.cue_expiration = 60
 area_rent.day_interval = core.settings:get("time_speed") + 0
-area_rent.scan_interval = area_rent.day_interval / 10
+area_rent.scan_interval = 5 -- Leave this unless you really know what you area doing. 
 area_rent.border_experation = 30
 area_rent.start_day = core.get_day_count()
-
-if area_rent.scan_interval == 0 then
-    area_rent.scan_interval = 5 
-end
 
 local cued_list = core.deserialize(area_rent.metadata:get_string("CUED"))
 if not cued_list then
@@ -85,7 +81,7 @@ core.register_on_punchplayer(function(player, hitter, time_from_last_punch, tool
     local playername = player:get_player_name()
     local hittername = hitter:get_player_name()
     if damage > area_rent.xp_hit then
-        arae_rent.updateXP(hittername,-10)
+        area_rent.updateXP(hittername,-10)
     end
     --core.chat_send_all(damage)
     --core.chat_send_all(time_from_last_punch)

@@ -149,7 +149,9 @@ core.register_chatcommand("rent", {
 			if not area_desc then
 				return false, "You might have missspelled the area name. \n\t\t Use --> /rent status <-- to see your cued areas"
 			end
-		
+			
+			local area_ID = area_desc.time
+
 			if os.time() - area_desc.time > area_rent.cue_expiration then
 				-- CUE Has expired
 				if not area_rent.qualify(name,XP,area_desc.cost) then
@@ -161,11 +163,14 @@ core.register_chatcommand("rent", {
 				area_desc.time = os.time()
 			end
 
-			--remove Que
-			cued_Areas[name][area_desc.name] = nil
-			area_rent.metadata:set_string("CUED",core.serialize(cued_Areas))			
+			--Remove Que
+			cued_Areas[name][area_ID] = nil
+			area_rent.metadata:set_string("CUED",core.serialize(cued_Areas))
+
+
+			--Create the new area
 			area_rent.rent_area(area_desc,name)
-			return false, "Rental complete"
+			return true, "Rental complete"
 		elseif action == "VIEW" then
 			local player = core.get_player_by_name(name)
 			local pos = vector.round(player:get_pos())
@@ -346,29 +351,6 @@ core.register_chatcommand("rent", {
 			message = message .. "\n\tThe following is the command for renting this area"
 			message = message .. "\n\t/rent area "..area_name
 			core.chat_send_player(name,message)
-
-
-
-			--[[
-			if not area_rent.metadata:contains(name) then
-				--The player has no areas stored
-				local area_name = name .. "_" .. os.time()
-				player_Meta[name] = { fields = {}}
-				player_Meta[name]["fields"][area_name] = area_rent.serialize(pos1, pos2, name, cost)
-				if mod_storage:from_table(player_Meta[name]) then
-					core.chat_send_all("Success")
-				end
-				core.chat_send_all("No entry")
-			else
-				core.chat_send_all("Found Entry")
-			end
-			]]--
-		
-			--local radius = {x = area_rent.origin.x - area_center.x, y = area_rent.origin.y - area_center.y, z = area_rent.origin.z - area_center.z}
-			
-			
-
-			--local area_center = vector
 
 			if area_ID then
 				-- is the player already the owner?

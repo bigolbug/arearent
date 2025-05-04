@@ -117,7 +117,8 @@ function area_rent.rent_area(area_data, renter)
         area_data.loaner = renter
     end
     
-    local renter_list = core.deserialize(area_rent.metadata:get_string("RENTERS"))
+    local renter_list = core.deserialize(area_rent.metadata:get_string("RENTED"))
+
     if not renter_list then
         renter_list = {}
     end
@@ -125,11 +126,24 @@ function area_rent.rent_area(area_data, renter)
     if not renter_list[renter] then
         renter_list[renter] = {}
     end
-    renter_list[renter][area_data.time]=area_data
-    area_rent.metadata:set_string("RENTERS",core.serialize(renter_list))
-    --Add Record
-    area_rent.create_area(area_data)
     
+    -- update area time to current time
+    area_data.time = tostring(os.time())
+
+    --Create the area in the Areas mod
+    area_data.ID = areas:add(area_data.loaner, area_data.name, area_data.pos1, area_data.pos2, nil)
+    areas:save()
+
+    renter_list[renter][area_data.time]=area_data
+
+    area_rent.metadata:set_string("RENTED",core.serialize(renter_list))
+
+    local last_day_charged = area_rent.metadata:get_int("last_charge_day")
+    if last_day_charged == 0 then
+        area_rent.metadata:set_int("last_charge_day",core.get_day_count())
+        area_rent.debug("Initializing last_day_charge in Metadata")
+    end
+
     return true
 end
 
@@ -409,23 +423,6 @@ function area_rent.remove_area(renter,area_name)
     return true
 end
 
-function area_rent.create_area(area_data)
-    local rental_data = core.deserialize(area_rent.metadata:get_string("RENTED"))
-    if not rental_data then
-        rental_data = {}
-    end
-    local player_rental_data = rental_data[area_data.loaner]
-    if not player_rental_data then
-        rental_data[area_data.loaner] = {}
-    end
-    --table.insert(player_rental_data,core.serialize(area_data)) Use this if you don't need area ID's
-    area_data.ID = areas:add(area_data.loaner, area_data.name, area_data.pos1, area_data.pos2, nil)
-    areas:save()
-    rental_data[area_data.loaner][area_data.name] = area_data
-    area_rent.metadata:set_string("RENTED", core.serialize(rental_data))
-    return area_data.ID
-end
-
 function area_rent.debug(text)
     core.log(area_rent.debuglevel,text)
 end
@@ -481,6 +478,11 @@ end
 
 function area_rent.updateXP(player,XP)
     --XP will arrive with negative of posative. Posative is add and Negative is remove
+    if not XP then
+        -- We need to sync XP_redo data with ours
+        area_rent.metadata:set_int(player.."XP",xp_redo.get_xp(player)) 
+        return true
+    end
 
     if core.get_player_by_name(player) then
         --Online
