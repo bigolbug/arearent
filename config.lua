@@ -12,10 +12,12 @@ area_rent.xp_hit = 4 -- This number represents the damage on a punch. Higher lev
 area_rent.cueable_Area_Limit = 5
 area_rent.qualifying_term = 30
 area_rent.cue_expiration = 60
+area_rent.charge_interval = 30
 area_rent.day_interval = core.settings:get("time_speed") + 0
 area_rent.scan_interval = 5 -- Leave this unless you really know what you area doing. 
 area_rent.border_experation = 30
 area_rent.start_day = core.get_day_count()
+
 
 local cued_list = core.deserialize(area_rent.metadata:get_string("CUED"))
 if not cued_list then
@@ -67,7 +69,7 @@ area_rent.limit = {
 area_rent.price = {
     rate = function (x)
         -- x is the distance from the oragin accurate up to three siginifigant digits. 
-        local rate = -.000004*x + .008
+        local rate = -.000004*x + .01
         if rate < .001 then
             rate = .001
         end

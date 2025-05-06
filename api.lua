@@ -200,6 +200,9 @@ function area_rent.get_areas_by_player(player, Status)
     local TBL = {}
     local rented_areas = core.deserialize(area_rent.metadata:get_string("RENTED"))
     local cued_areas = core.deserialize(area_rent.metadata:get_string("CUED"))
+
+    if not rented_areas then rented_areas = {} end
+    if not cued_areas then cued_areas = {} end
     
     if not Status then
         -- No status was specified, using both rented and cued
@@ -397,7 +400,7 @@ function area_rent.remove_area(renter,area_name)
     end
 
     local rented_areas = core.deserialize(area_rent.metadata:get_string("RENTED"))
-    local area_data = area_rent.get_area_by_name(area_name)
+    local area_data = rented_areas[renter][area_name]
     if not area_data then
         return false, "area_data"
     end
@@ -416,8 +419,8 @@ function area_rent.remove_area(renter,area_name)
         return false, "owner"
     end
     area_rent.debug("Area removal: "..area_name.. " with ID:" .. ID)
-    rented_areas.renter.area_name = nil
-    area_rent.metadata:set_string(area_name,"")
+    rented_areas[renter][area_name] = nil
+    area_rent.metadata:set_string("RENTED",core.serialize(rented_areas))
     areas:remove(ID)
     areas:save()
     return true
@@ -489,7 +492,12 @@ function area_rent.updateXP(player,XP)
         local prev_XP = xp_redo.get_xp(player)
         local new_XP = prev_XP + XP
         xp_redo.add_xp(player,XP)
-        area_rent.metadata:set_int(player.."XP",new_XP) 
+        if new_XP < 0 then 
+            area_rent.metadata:set_int(player.."XP",0) 
+        else
+            area_rent.metadata:set_int(player.."XP",new_XP) 
+        end
+
 
     else
         --offline

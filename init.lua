@@ -20,7 +20,7 @@ core.register_globalstep(function(dtime)
     local current_day = core.get_day_count()
     local current_time = os.time()
     --area_rent.debug("current day count "..current_day..". Last charge date ".. last_day_charged)
-    if math.abs(current_day - last_day_charged) ~= 0 or area_rent.day_interval == 0 then
+    if math.abs(current_day - last_day_charged) > area_rent.charge_interval or area_rent.day_interval == 0 then
         --It is a new day but should we scan?
         if current_time - last_scan > area_rent.scan_interval then
             area_rent.debug("Charging players")
@@ -62,6 +62,10 @@ core.register_on_joinplayer(function(player)
     else
         -- This is a returning player. Update XP
         local discrepancy = current_XP - old_XP
+        if discrepancy < 0 then 
+            discrepancy = 0 
+            area_rent.metadata:set_int(renter.."XP",0)
+        end
         xp_redo.add_xp(renter, discrepancy)
         area_rent.debug("Updating "..renter.. "'s xp_redo data. "..
         "\nxp_redo had ".. old_XP .. " but while offline their XP changed to "..current_XP)
