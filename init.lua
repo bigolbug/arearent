@@ -20,7 +20,7 @@ core.register_globalstep(function(dtime)
     local current_day = core.get_day_count()
     local current_time = os.time()
     --area_rent.debug("current day count "..current_day..". Last charge date ".. last_day_charged)
-    if math.abs(current_day - last_day_charged) > area_rent.charge_interval or area_rent.day_interval == 0 then
+    if math.abs(current_day - last_day_charged) > area_rent.charge_interval-1 or area_rent.day_interval == 0 then
         --It is a new day but should we scan?
         if current_time - last_scan > area_rent.scan_interval then
             area_rent.debug("Charging players")
@@ -41,8 +41,13 @@ core.register_globalstep(function(dtime)
         local rental_data = core.deserialize(area_rent.metadata:get_string("RENTED"))
         if rental_data then
             for renter, value in pairs(rental_data) do
-                area_rent.updateXP(renter)
-                area_rent.debug("Syncing XP for ".. renter)
+                if core.get_player_by_name(renter) then
+                    area_rent.updateXP(renter)
+                    area_rent.debug("Syncing XP for ".. renter)    
+                else
+                    area_rent.debug(renter.. " is not offline, skipping sync")
+                end
+                
             end
         end
         

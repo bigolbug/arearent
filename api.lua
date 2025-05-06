@@ -200,7 +200,8 @@ function area_rent.get_areas_by_player(player, Status)
     local TBL = {}
     local rented_areas = core.deserialize(area_rent.metadata:get_string("RENTED"))
     local cued_areas = core.deserialize(area_rent.metadata:get_string("CUED"))
-
+    
+    if not Status then Status = string.upper(Status) end
     if not rented_areas then rented_areas = {} end
     if not cued_areas then cued_areas = {} end
     
@@ -270,7 +271,7 @@ function area_rent.qualify(name,XP,cost,term)
     if Total_Properties_Cost * term < XP then
         return true
     end
-
+    area_rent.debug(name.." does not qualify since the property cost of "..Total_Properties_Cost .. " exceeds their current XP " ..XP.." for term "..term)
     return false
 end
 
@@ -317,6 +318,7 @@ function area_rent.charge()
     for renter in pairs(rentals) do
 
         local XP = area_rent.metadata:get_int(renter.."XP")
+        area_rent.debug(renter .. " currently has "..XP.." XP")
         local player_areas = area_rent.get_areas_by_player(renter,"rented")
         
 
@@ -501,9 +503,11 @@ function area_rent.updateXP(player,XP)
 
     else
         --offline
+        
         local prev_XP = area_rent.metadata:get_int(player.."XP")
         local new_XP = prev_XP + XP
 
+        area_rent.debug(player.." is offline. They previously had "..prev_XP.." now they have "..new_XP)
         if new_XP < 0 then
             area_rent.metadata:set_int(player.."XP",0) 
             area_rent.debug(player.. " has negative XP for their new_XP: "..new_XP)
