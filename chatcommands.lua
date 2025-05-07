@@ -306,12 +306,18 @@ core.register_chatcommand("rent", {
 			-- Check to see if an area needs to be selected. 
 			if not (area_data.pos1 and area_data.pos2) then
 				return false, "You need to select an area first. Use /area_pos1 \nand /area_pos2 to set the bounding corners"
+			else
+				-- Make sure that pos2 is the farther then pos1
+				if area_data.pos1.x > area_data.pos2.x then
+					local temp_pos = area_data.pos1
+					area_data.pos1 = area_data.pos2
+					area_data.pos2 = temp_pos
+				end
 			end
 			
 			--Check for intersecting areas and determine action. 
 			local intersecting_areas = areas:getAreasIntersectingArea(area_data.pos1, area_data.pos2)
-			area_rent.debug("There are ".. #intersecting_areas .. " intersecting araes")
-			area_rent.debug("intersecting araes variable type: "..type(#intersecting_areas))
+			local intersecting_areas = area_rent.get_intersecting_areas(area_data)
 			--This is were you would find out if the player owns the area. 
 			if #intersecting_areas > 0 then
 				return false, "At this time you can not rent this area since it intersects with another"

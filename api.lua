@@ -201,7 +201,7 @@ function area_rent.get_areas_by_player(player, Status)
     local rented_areas = core.deserialize(area_rent.metadata:get_string("RENTED"))
     local cued_areas = core.deserialize(area_rent.metadata:get_string("CUED"))
     
-    if not Status then Status = string.upper(Status) end
+    if Status then Status = string.upper(Status) end
     if not rented_areas then rented_areas = {} end
     if not cued_areas then cued_areas = {} end
     
@@ -516,4 +516,18 @@ function area_rent.updateXP(player,XP)
         end    
     end
     return true
+end
+
+function area_rent.get_intersecting_areas(area_data)
+    local rentals = core.deserialize(area_rent.metadata:get_string("RENTED"))
+    if not rentals then
+        rentals = {}
+    end
+    for area_name, area_data in pairs(rentals) do
+        if area_data.pos1.x then
+            
+            
+        end
+    end
+    return area_ID
 end
