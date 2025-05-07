@@ -45,7 +45,7 @@ core.register_globalstep(function(dtime)
                     area_rent.updateXP(renter)
                     area_rent.debug("Syncing XP for ".. renter)    
                 else
-                    area_rent.debug(renter.. " is not offline, skipping sync")
+                    area_rent.debug(renter.. " is offline, skipping sync")
                 end
                 
             end
@@ -61,19 +61,15 @@ core.register_on_joinplayer(function(player)
     local old_XP = xp_redo.get_xp(renter) or 0
     local current_XP = area_rent.metadata:get_int(renter.."XP")
     area_rent.debug(renter.. " just joined the game, let's setup a few things")
-    if current_XP == 0 then
+    if not area_rent.metadata:contains(renter.."XP") then
         -- This is a new player. Creating entry in metadata
         area_rent.metadata:set_int(renter.."XP",old_XP)
     else
         -- This is a returning player. Update XP
         local discrepancy = current_XP - old_XP
-        if discrepancy < 0 then 
-            discrepancy = 0 
-            area_rent.metadata:set_int(renter.."XP",0)
-        end
         xp_redo.add_xp(renter, discrepancy)
-        area_rent.debug("Updating "..renter.. "'s xp_redo data. "..
-        "\nxp_redo had ".. old_XP .. " but while offline their XP changed to "..current_XP)
+        area_rent.metadata:set_int(renter.."XP",xp_redo.get_xp(renter))
+        area_rent.debug("Updating "..renter.. "'s xp_redo data. xp_redo was off by ".. discrepancy)
     end
 
     --Setup the rental data for user

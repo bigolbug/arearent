@@ -499,11 +499,8 @@ function area_rent.updateXP(player,XP)
         else
             area_rent.metadata:set_int(player.."XP",new_XP) 
         end
-
-
     else
         --offline
-        
         local prev_XP = area_rent.metadata:get_int(player.."XP")
         local new_XP = prev_XP + XP
 
@@ -523,11 +520,12 @@ function area_rent.get_intersecting_areas(area_data)
     if not rentals then
         rentals = {}
     end
-    for area_name, area_data in pairs(rentals) do
-        if area_data.pos1.x then
-            
-            
+    for renters, areas in pairs(rentals) do
+        for area_name, area_data in pairs(areas) do
+            if area_data.pos1.x then
+                
+            end
         end
     end
-    return area_ID
+    return false
 end

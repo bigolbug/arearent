@@ -319,7 +319,7 @@ core.register_chatcommand("rent", {
 			local intersecting_areas = areas:getAreasIntersectingArea(area_data.pos1, area_data.pos2)
 			local intersecting_areas = area_rent.get_intersecting_areas(area_data)
 			--This is were you would find out if the player owns the area. 
-			if #intersecting_areas > 0 then
+			if intersecting_areas then
 				return false, "At this time you can not rent this area since it intersects with another"
 			end
 
