@@ -5,9 +5,9 @@ core.register_chatcommand("rent", {
 	"Example: \n"..
 	"type /rent          	to find out details about your rental area\n"..
 	"type /rent area     	to rent an area\n"..
+	"type /rent remove ID	remove an area by ID. Use /rent status to check ID's\n"..
 	"type /rent status   	for an update on your properties\n"..
-	"type /rent pos X,Y,Z  	to set the area markers. exclude X,Y,Z to select default area, set to 0 to use defaults\n"..
-	"type /rent    	 		to set the second area marker\n"
+	"type /rent pos X,Y,Z  	to set the area markers. exclude X,Y,Z to select default area, set to 0 to use defaults\n"
 	,
 	func = function(name, param)
 		-- define a local variables
@@ -23,11 +23,11 @@ core.register_chatcommand("rent", {
 		local pos = player:get_pos()
 		local XP = area_rent.metadata:get_int(name.."XP")
 		local area_data = {}
-		area_data["pos1"], area_data["pos2"] = areas:getPos(name)
-		area_data["owner"] = "SERVER"
-		area_data["loaner"] = name
-		area_data["cost"] = nil
-		area_data["time"] = tostring(os.time())
+		area_data.pos1, area_data.pos2 = areas:getPos(name)
+		area_data.owner = "SERVER"
+		area_data.loaner = name
+		area_data.cost = nil
+		area_data.time = tostring(os.time())
 
 		if action == "STATUS" then
 			local message = "You have "..XP.." xp. "
@@ -135,7 +135,7 @@ core.register_chatcommand("rent", {
 			areas:setPos1(name, pos)
 			local pos = vector.add(pos,limit)
 			areas:setPos2(name, pos)
-			return true, "Selection complete"
+			return true, "Selection complete. Just FYI, you can customize your selection by including X,Y,Z where Y is height"
 		elseif action == "AREA"  then
 			--validate cue
 			local cued_Areas = core.deserialize(area_rent.metadata:get_string("CUED"))
@@ -145,7 +145,7 @@ core.register_chatcommand("rent", {
 			if not cued_Areas[name] then
 				return false, name .. " does not have any cued areas\n\t\t Use --> /rent <-- to cue an area"
 			end
-			local area_desc = area_rent.get_area_by_name(area_ID,name)
+			local area_desc = area_rent.get_area_by_name(area_ID,name,"cued")
 			if not area_desc then
 				return false, "You might have missspelled the area name. \n\t\t Use --> /rent status <-- to see your cued areas"
 			end
@@ -154,7 +154,7 @@ core.register_chatcommand("rent", {
 
 			if os.time() - area_desc.time > area_rent.cue_expiration then
 				-- CUE Has expired
-				if not area_rent.qualify(name,XP,area_desc.cost) then
+				if not area_rent.qualify(area_desc,name) then
 					local total_rent = player_rent + area_desc.cost
 					local qualifying_XP = area_rent.qualifying_term * total_rent
 					local XP_difference = qualifying_XP - XP
@@ -296,7 +296,11 @@ core.register_chatcommand("rent", {
 			areas:save()
 			return true, "Area ".. area_name.." with ID ".. ID .. " has been removed. Check /rent Status to cofirm"
 
-		elseif action == nil then
+		else
+			if action and tonumber(action) then
+				return false, ""
+			end
+			
 			-- Check to see if mod is enabled
 			local ar_center = core.deserialize(area_rent.metadata:get_string("center"))
 			if not ar_center then
@@ -315,46 +319,63 @@ core.register_chatcommand("rent", {
 				end
 			end
 			
+			-- find distance and direction from area center to the universal center
+			area_data.center = area_rent.center_pos(area_data.pos1,area_data.pos2)
+			area_data.distance_to_center = vector.distance(ar_center, area_data.center)
+			local direction = vector.direction(area_data.center,ar_center)
+			area_data.direction = math.atan2(direction.x,-direction.z)+math.pi
+
+			--Set Deltas
+			area_data.dy = math.abs(area_data.pos1.y - area_data.pos2.y)
+			area_data.dx = math.abs(area_data.pos1.x - area_data.pos2.x)
+			area_data.dz = math.abs(area_data.pos1.z - area_data.pos2.z)
+
+			-- find the XZ center
+			area_rent.xz_center(area_data, ar_center)
+
 			--Check for intersecting areas and determine action. 
-			local intersecting_areas = areas:getAreasIntersectingArea(area_data.pos1, area_data.pos2)
+			--local intersecting_areas = areas:getAreasIntersectingArea(area_data.pos1, area_data.pos2)
 			local intersecting_areas = area_rent.get_intersecting_areas(area_data)
 			--This is were you would find out if the player owns the area. 
-			if intersecting_areas then
-				return false, "At this time you can not rent this area since it intersects with another"
-			end
-
-			--Check to make sure the area is the correct shape
-			local area_height = math.abs(area_data.pos1.y - area_data.pos2.y)
-			local area_dx = math.abs(area_data.pos1.x - area_data.pos2.x)
-			local area_dz = math.abs(area_data.pos1.z - area_data.pos2.z)
 			
-			if area_rent.greifer_check(area_dx,area_height,area_dz,area_data.loaner) then
+			if not intersecting_areas then
+				return false, "You can't rent this selection since it intersects with another players property"
+			elseif area_rent.tableLen(intersecting_areas) then
+				area_rent.debug("This is how many intersecting areas there are "..area_rent.tableLen(intersecting_areas))
+				core.chat_send_player(name, "!!! Just so you know, your selection intersects with your area(s) !!!")
+				area_rent.debug("Listing areas that area intersecting")
+				for area_ID, area_data in pairs(intersecting_areas) do
+					area_rent.debug(area_ID.." with name ".. area_data.name)
+					core.chat_send_player(name,"\t\t"..area_data.name .. " with ID "..area_data.ID)
+				end
+			else
+				area_rent.debug("no intersecting areas")
+			end
+			
+			if area_rent.greifer_check(area_data.dx,area_data.dy,area_data.dz,area_data.loaner) then
 				return false, "Please reselect an area and try /rent again"
 			end
 
 			--Calculate Volume
-			area_data.volume = area_height * area_dx * area_dz
+			area_data.volume = area_data.dy * area_data.dx * area_data.dz
 			if area_data.volume > area_rent.limit.volume then return false, "Please reduce the size of your selection" end
 
 			-- CALCULATE RENTAL PRICE
-			-- find distance from area center to the universal center
-			local area_center = area_rent.center_pos(area_data.pos1,area_data.pos2)
-			local distance_to_center = vector.distance(ar_center, area_center)
-			local rate = area_rent.price.rate(distance_to_center)
+			local rate = area_rent.price.rate(area_data.distance_to_center)
 			area_data.cost = math.ceil(rate * area_data.volume)
-			core.chat_send_player(name,"This area will cost: ".. area_data.cost .. " xp per day\n\tArea priced at "..rate.." xp per node per day")
+			core.chat_send_player(name,"This area will cost: ".. area_data.cost .. " xp per day ("..rate.." xp per node per day)")
 			
-			--Based on your current XP...
-			if not area_rent.qualify(area_data.loaner,XP,area_data.cost) then
-				return false, "You have ".. XP.." XP. which is insufficient XP to rent this area\n"..
-					"You must be able to cover the cost of your properties for up to ".. area_rent.qualifying_term.." days"
+			--Based on your current XP and Volume...
+			if not area_rent.qualify(area_data) then
+				return false, "It looks like you don't qualify. You either have to much property or not enough XP"..
+				"\nYou must have an additional "..area_rent.qualifying_term * XP.. " XP to rent this area"..
+				"\nor you must remove areas to add additional ones. Do this with /rent remove <ID>"
 			end
 			
 			--Save the area in mod storage and inform the user on how to recall it. 
 			local message = ""
 			local area_name = area_rent.cue_Area(area_data)
-			message = message .. "\n\tThe area you have cued is called " .. area_name
-			message = message .. "\n\tThe following is the command for renting this area"
+			message = message .. "\tThe area you have cued is called " .. area_name .. ". Here is the command for renting the area"
 			message = message .. "\n\t/rent area "..area_name
 			core.chat_send_player(name,message)
 
@@ -363,9 +384,6 @@ core.register_chatcommand("rent", {
 				local area = areas.areas[area_ID]
 				return false, "Your selection itersects with another players area"
 			end
-		else
-			core.chat_send_all("Action Variable Value: -->"..action.."<--")
-			return false, "I'm sorry, you have used /rent incorrectly. For more info please use --> /help all"
 		end
 	end
 })
@@ -427,6 +445,57 @@ core.register_chatcommand("rcmd",{
 			end
 			return true
 		elseif action == "RENTED" then
+		elseif action == "RAD" then
+			local player = core.get_player_by_name(name)
+			if player == nil then
+				return false, name .. " is not currently active in the game"
+			end
+			local player_meta = player:get_meta()
+			local pos = player:get_pos()
+			local ar_center = core.deserialize(area_rent.metadata:get_string("center"))
+			local direction = vector.direction(pos,ar_center)
+			local direction_rad = math.atan2(direction.x,-direction.z)+math.pi
+
+			core.chat_send_player(name,"You are currently ".. direction_rad.. " radians around center")
+			return true
+
+		elseif action == "INTERSECTING" then
+			local ar_center = core.deserialize(area_rent.metadata:get_string("center"))
+			if not ar_center then
+				return false, "Area rent mod is not setup. Ask your admin to set a center with /rcmd center"
+			end
+			local area_data = {}
+			area_data.pos1, area_data.pos2 = areas:getPos(name)
+			-- Check to see if an area needs to be selected. 
+			if not (area_data.pos1 and area_data.pos2) then
+				return false, "You need to select an area first. Use /area_pos1 \nand /area_pos2 to set the bounding corners"
+			else
+				-- Make sure that pos2 is the farther then pos1
+				if area_data.pos1.x > area_data.pos2.x then
+					local temp_pos = area_data.pos1
+					area_data.pos1 = area_data.pos2
+					area_data.pos2 = temp_pos
+				end
+			end
+
+			--Calculate area deltas
+			area_data.dy = math.abs(area_data.pos1.y - area_data.pos2.y)
+			area_data.dx = math.abs(area_data.pos1.x - area_data.pos2.x)
+			area_data.dz = math.abs(area_data.pos1.z - area_data.pos2.z)
+
+			area_data.loaner = name
+			area_data.owner = "SERVER"
+			area_data.center = area_rent.center_pos(area_data.pos1,area_data.pos2)
+			area_data.distance_to_center = vector.distance(ar_center, area_data.center)
+			local direction = vector.direction(area_data.center,ar_center)
+			area_data.direction = math.atan2(direction.x,-direction.z)+math.pi
+			area_rent.xz_center(area_data,ar_center)
+			local intersecting_areas = area_rent.get_intersecting_areas(area_data)
+			if not area_rent.tableLen(intersecting_areas) then
+				return false, "There are intersecting areas"
+			end
+			return true, "There are not intersecting areas"
+
 		elseif action == "CHARGE" then
 			if not area_rent.charge() then
 				return false, "You can only charge once per day."

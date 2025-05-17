@@ -15,7 +15,7 @@ area_rent.cue_expiration = 60
 area_rent.charge_interval = 1
 area_rent.day_interval = core.settings:get("time_speed") + 0
 area_rent.scan_interval = 5 -- Leave this unless you really know what you area doing. 
-area_rent.border_experation = 30
+area_rent.border_experation = 30 -- Time in seconds that the rent view boarder will last
 area_rent.start_day = core.get_day_count()
 
 
@@ -59,12 +59,14 @@ end
 area_rent.limit = {
     hrz_ratio = .3,-- shortest side / longest side
     vrt_ratio = 7, -- height / shortest side
-    h_min = 20, -- Min height 
+    h_min = 5, -- Min height 
+    h_max = 100,
     w_max = 20, -- Max Width
     w_min = 3,
     properties = 10,
-    volume = 5000,
-    viewable_dist = 50
+    volume = 8000,
+    viewable_dist = 50,
+    total_volume = 1000000
 }
 area_rent.price = {
     rate = function (x)
@@ -92,13 +94,13 @@ end)
 area_rent.adj = {
     "rocky","layered","cracked","eroded","weathered","volcanic",
     "muddy","sandy","hard","soft","bumpy","smooth","steep","flat",
-    "tilted","dense","porous","dry","wet","strated","soggy","poisonous",
-    "terrible","dangerous","wild","tiny"
+    "tilted","dense","porous","dry","strated","soggy","poisonous",
+    "terrible","dangerous","wild","tiny","lazy"
 }
 
 area_rent.noun = {
-    "rock","sand","dirt","clay","soil","lava","mud","stone","boulder","pebble","crack",
-    "hole","ground","water"
+    "rock","sand","dirt","clay","soil","lava","mud","stone","boulder","pebble","pit",
+    "grass","cactus","branch","flower","ground","water"
 }
 
 area_rent.formation = {

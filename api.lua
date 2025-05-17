@@ -47,11 +47,20 @@ function area_rent.greifer_check(x,y,z,player)
         return true    
     end
 
+    if y > area_rent.limit.h_max then
+        core.chat_send_player(player,"Your selection is ".. area_rent.limit.h_max - y .." blocks to tall")       
+        return true
+    elseif y < area_rent.limit.h_min then
+        core.chat_send_player(player,"Your selection is ".. area_rent.limit.h_min - y .." blocks to short")            
+        return true    
+    end
+
     if ratio_vert > area_rent.limit.vrt_ratio then
         core.chat_send_player(player,"Your selection is to tall")
         return true
     end
     
+
 end
 
 function area_rent.cue_Area(area_data)
@@ -88,25 +97,51 @@ function area_rent.cue_Area(area_data)
     return area_data.name
 end
 
-function area_rent.get_area_by_name(search_name,owner)
+function area_rent.get_area_by_name(search_name,owner,category)
     local cued_Areas = core.deserialize(area_rent.metadata:get_string("CUED"))
     local rented_Areas = core.deserialize(area_rent.metadata:get_string("RENTED"))
-    local TBL = {}
-    if rented_Areas[owner] then
-        for area_name, area_des in pairs(rented_Areas[owner]) do
-            if area_des.name == search_name then
-                return area_des
+
+    if not category then
+        if rented_Areas[owner] then
+            for area_name, area_des in pairs(rented_Areas[owner]) do
+                if area_des.name == search_name then
+                    return area_des
+                end
             end
         end
+        
+        if cued_Areas[owner] then
+            for area_name, area_des in pairs(cued_Areas[owner]) do
+                if area_des.name == search_name then
+                    return area_des
+                end
+            end
+        end
+        return false    
     end
+
+    category = string.upper(category)
     
-    if cued_Areas[owner] then
-        for area_name, area_des in pairs(cued_Areas[owner]) do
-            if area_des.name == search_name then
-                return area_des
+    if category == "CUED" then
+        if cued_Areas[owner] then
+            for area_name, area_des in pairs(cued_Areas[owner]) do
+                if area_des.name == search_name then
+                    return area_des
+                end
             end
-        end
+        end    
     end
+
+    if category == "RENTED" then
+        if rented_Areas[owner] then
+            for area_name, area_des in pairs(rented_Areas[owner]) do
+                if area_des.name == search_name then
+                    return area_des
+                end
+            end
+        end    
+    end
+
     return false
 end
 
@@ -253,25 +288,46 @@ function area_rent.get_areas_by_player(player, Status)
     return TBL
 end
 
-function area_rent.qualify(name,XP,cost,term)
-    cost = cost or 0
+function area_rent.qualify(qualifying_data,name,term)
+    local total_Properties_Cost = 0
+    local total_volume = 0
     term = term or area_rent.qualifying_term
+    
+    if qualifying_data then 
+        total_Properties_Cost = qualifying_data.cost 
+        total_volume = qualifying_data.volume 
+        if not name then
+            name = qualifying_data.loaner    
+        elseif qualifying_data.loaner ~= name then
+            -- the name does not match the loaner of the area specified.
+        end
+    end
+
+    if not name then
+        area_rent.debug("area_data and player name was not specified, there is not way to qualify")
+        return false
+    end
+
+    local XP = area_rent.metadata:get_int(name.."XP")
+    area_rent.debug(name .. " currently has "..XP.." XP")
+
     -- get all the properties of a player
-    local Total_Properties_Cost = cost
     local player_properties = area_rent.get_areas_by_player(name,"RENTED")
     
     --Count up the cost for all rentals
     if area_rent.tableLen(player_properties) then
         for area_name,area_data in pairs(player_properties) do
-            Total_Properties_Cost = Total_Properties_Cost + area_data.cost
+            total_Properties_Cost = total_Properties_Cost + area_data.cost
+            total_volume = total_volume + area_data.volume
         end
     end
 
-    -- If the daily property cost is less then the players XP return true
-    if Total_Properties_Cost * term < XP then
+    --if volume is less then the max
+    if total_volume < area_rent.limit.total_volume and total_Properties_Cost * term < XP then
         return true
     end
-    area_rent.debug(name.." does not qualify since the property cost of "..Total_Properties_Cost .. " exceeds their current XP " ..XP.." for term "..term)
+
+    area_rent.debug(name.." does not qualify since the property cost of "..total_Properties_Cost .. " exceeds their current XP " ..XP.." for "..term.." day term")
     return false
 end
 
@@ -279,7 +335,7 @@ function area_rent.tableLen(TBL)
     local count = 0
 
     if not TBL then
-        area_rent.debug("The table was not defined in the tableLen function")
+        area_rent.debug("The table was not passed to the tableLen function")
         return false
     end
     
@@ -316,14 +372,11 @@ function area_rent.charge()
 
     -- parse through renteres list and charge each
     for renter in pairs(rentals) do
-
-        local XP = area_rent.metadata:get_int(renter.."XP")
-        area_rent.debug(renter .. " currently has "..XP.." XP")
         local player_areas = area_rent.get_areas_by_player(renter,"rented")
         
 
         --Check to make sure renter can make payment
-        while (not area_rent.qualify(renter,XP,0,2)) and (area_rent.tableLen(player_areas)) do
+        while (not area_rent.qualify(nil,renter,2)) and (area_rent.tableLen(player_areas)) do
             area_rent.debug(renter.." can not make payment, removing propery")
             local removed,message = area_rent.remove_area(renter)
             if not removed then
@@ -516,16 +569,93 @@ function area_rent.updateXP(player,XP)
 end
 
 function area_rent.get_intersecting_areas(area_data)
+    local intersecting_areas = {}
+    area_rent.debug("Checking for intersecting areas")
     local rentals = core.deserialize(area_rent.metadata:get_string("RENTED"))
     if not rentals then
         rentals = {}
     end
-    for renters, areas in pairs(rentals) do
-        for area_name, area_data in pairs(areas) do
-            if area_data.pos1.x then
-                
+
+    area_rent.debug(area_data.xz_center_distance.." nodes from center")
+    if area_data.xz_center_distance < area_rent.limit.w_max/2 then
+        area_rent.debug("We are really close to center and will ignore direction")
+        -- We are really close to center and should ignore direction
+        for renters, areas in pairs(rentals) do
+            for other_area_ID, other_area_data in pairs(areas) do
+                if other_area_data.xz_center_distance < area_rent.limit.w_max/2 then
+                    --this area is close to center
+                    local centers_vector = vector.subtract(area_data.center,other_area_data.center)
+                    if math.abs(centers_vector.y) <= area_data.dy/2 + other_area_data.dy/2 then
+                        -- check the x and the z
+                        area_rent.debug("The area heights are in the same plane ".. area_data.dy/2 + other_area_data.dy/2 .. "dy is greater then centers.y = "..math.abs(centers_vector.y).." ")
+                        if math.abs(centers_vector.x)+1 <= area_data.dx/2 + other_area_data.dx/2 and
+                            math.abs(centers_vector.z)+1 <= area_data.dz/2 + other_area_data.dz/2
+                        then
+                            area_rent.debug("There is an area conflict ")
+                            area_rent.debug(area_data.dx/2 + other_area_data.dx/2 .. "dx  \t\tcenters.x = "..math.abs(centers_vector.x))
+                            area_rent.debug(area_data.dz/2 + other_area_data.dz/2 .. "dz  \t\tcenters.z = "..math.abs(centers_vector.z))
+                            intersecting_areas[other_area_ID] = other_area_data    
+                            if area_data.loaner ~= other_area_data.loaner then
+                                return false
+                            end
+                        end
+                    else
+                        area_rent.debug("The area heights are not on the same plane ".. area_data.dy/2 + other_area_data.dy/2 .. "dy is less then centers.y = "..math.abs(centers_vector.y))
+                    end
+                end
             end
         end
+        return intersecting_areas
     end
-    return false
+    area_rent.debug("We are far from center checking all the properties")
+    for renters, areas in pairs(rentals) do
+        for other_area_ID, other_area_data in pairs(areas) do        
+            -- compair the distance to center.
+            local direction_difference = area_data.direction - other_area_data.direction
+            area_rent.debug("Comparing selection to ".. other_area_data.name)
+            if math.abs(direction_difference) < .5 or math.abs(direction_difference) > 5 then
+                area_rent.debug("Direction difference between the two areas ".. math.abs(area_data.direction - other_area_data.direction))
+                if math.abs(other_area_data.xz_center_distance - area_data.xz_center_distance) < area_rent.limit.w_max then
+                    area_rent.debug(other_area_data.name.." is ".. math.abs(other_area_data.xz_center_distance - area_data.xz_center_distance) .." nodes from the selected area")
+                    local centers_vector = vector.subtract(area_data.center,other_area_data.center)
+
+                    if math.abs(centers_vector.y) <= area_data.dy/2 + other_area_data.dy/2 then
+                        -- check the x and the z
+                        area_rent.debug("The area heights are in the same plane ".. area_data.dy/2 + other_area_data.dy/2 .. "dy is greater then centers.y = "..math.abs(centers_vector.y).." ")
+                        if math.abs(centers_vector.x) <= area_data.dx/2 + other_area_data.dx/2 and
+                            math.abs(centers_vector.z) <= area_data.dz/2 + other_area_data.dz/2
+                        then
+                            area_rent.debug("There is an area conflict ")
+                            area_rent.debug(area_data.dx/2 + other_area_data.dx/2 .. "dx  \t\tcenters.x = "..math.abs(centers_vector.x))
+                            area_rent.debug(area_data.dz/2 + other_area_data.dz/2 .. "dz  \t\tcenters.z = "..math.abs(centers_vector.z))
+                            intersecting_areas[other_area_ID] = other_area_data
+                            if area_data.loaner ~= other_area_data.loaner then
+                                return false
+                            end
+                        end
+                    else
+                        area_rent.debug("The area heights are not on the same plane ".. area_data.dy/2 + other_area_data.dy/2 .. "dy is less then centers.y = "..math.abs(centers_vector.y))
+                    end
+                else
+                    area_rent.debug(other_area_data.name .. " is not within the radious of the selection")
+                end     
+            else
+                area_rent.debug("But not within the direction window")
+            end
+            --area_rent.debug("Direction to ".. other_area_data.name .." is "..other_area_data.direction)
+            --area_rent.debug("Distance to ".. other_area_data.name .." is "..other_area_data.distance_to_center)
+        end
+    end
+    return intersecting_areas
+end
+
+function area_rent.xz_center(area_data,center)
+    local pos1 = {x=area_data.pos1.x,y=0,z=area_data.pos1.z}
+    local pos2 = {x=area_data.pos2.x,y=0,z=area_data.pos2.z}
+    local pos3 = {x=center.x,y=0,z=center.z}
+
+    area_data.xz_center = area_rent.center_pos(pos1,pos2)
+    area_data.xz_center_distance = vector.distance(pos3, area_data.xz_center)
+
+    return 0, 0
 end
